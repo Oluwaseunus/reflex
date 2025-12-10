@@ -1,0 +1,173 @@
+{
+  "": {
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/master.swiftdeps"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/AccessibilityManager.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AccessibilityManager.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AccessibilityManager.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AccessibilityManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AccessibilityManager.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AccessibilityManager.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/MediaAppDetector.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaAppDetector.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaAppDetector.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaAppDetector~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaAppDetector.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaAppDetector.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/MediaCommandSender.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommandSender.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommandSender.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommandSender~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommandSender.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommandSender.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/MediaKeyListener.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaKeyListener.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaKeyListener.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaKeyListener~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaKeyListener.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaKeyListener.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/PreferencesManager.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesManager.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesManager.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesManager.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesManager.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/SmartRouter.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/SmartRouter.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/SmartRouter.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/SmartRouter~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/SmartRouter.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/SmartRouter.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Managers/StatusBarManager.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarManager.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarManager.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarManager.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarManager.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Models/AppPreferences.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppPreferences.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppPreferences.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppPreferences~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppPreferences.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppPreferences.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Models/MediaApp.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaApp.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaApp.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaApp.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaApp.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Models/MediaCommand.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommand.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommand.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommand~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommand.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/MediaCommand.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Models/PlaybackState.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PlaybackState.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PlaybackState.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PlaybackState~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PlaybackState.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PlaybackState.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/ReflexApp.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ReflexApp.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ReflexApp.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ReflexApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ReflexApp.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ReflexApp.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Onboarding/PermissionsGuideView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PermissionsGuideView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PermissionsGuideView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PermissionsGuideView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PermissionsGuideView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PermissionsGuideView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Onboarding/WelcomeView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/WelcomeView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/WelcomeView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/WelcomeView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/WelcomeView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/WelcomeView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Preferences/AboutPreferencesView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AboutPreferencesView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AboutPreferencesView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AboutPreferencesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AboutPreferencesView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AboutPreferencesView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Preferences/AppsPreferencesView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppsPreferencesView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppsPreferencesView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppsPreferencesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppsPreferencesView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppsPreferencesView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Preferences/GeneralPreferencesView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/GeneralPreferencesView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/GeneralPreferencesView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/GeneralPreferencesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/GeneralPreferencesView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/GeneralPreferencesView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Preferences/PreferencesWindow.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesWindow.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesWindow.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesWindow~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesWindow.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/PreferencesWindow.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/Preferences/ShortcutsPreferencesView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ShortcutsPreferencesView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ShortcutsPreferencesView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ShortcutsPreferencesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ShortcutsPreferencesView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/ShortcutsPreferencesView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/UI/StatusBar/StatusBarView.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarView.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarView.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarView~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarView.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/StatusBarView.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Utilities/AppleScriptHelper.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppleScriptHelper.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppleScriptHelper.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppleScriptHelper~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppleScriptHelper.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/AppleScriptHelper.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Utilities/Constants.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Constants.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Constants.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Constants~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Constants.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Constants.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/Reflex/Utilities/Logger.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Logger.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Logger.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Logger~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Logger.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/Logger.dia"
+  },
+  "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/DerivedSources/resource_bundle_accessor.swift": {
+    "dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/resource_bundle_accessor.d",
+    "object": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/resource_bundle_accessor.swift.o",
+    "swiftmodule": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/resource_bundle_accessor~partial.swiftmodule",
+    "swift-dependencies": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/resource_bundle_accessor.swiftdeps",
+    "diagnostics": "/Users/oluwaseunus/Documents/Work/reflex/.build/index-build/arm64-apple-macosx/debug/Reflex.build/resource_bundle_accessor.dia"
+  }
+}

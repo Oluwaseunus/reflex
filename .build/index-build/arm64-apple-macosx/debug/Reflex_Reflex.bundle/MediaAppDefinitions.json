@@ -1,0 +1,82 @@
+[
+  {
+    "id": "com.spotify.client",
+    "name": "Spotify",
+    "bundleIdentifier": "com.spotify.client",
+    "icon": "music.note",
+    "appleScriptName": "Spotify",
+    "supportsNowPlaying": true
+  },
+  {
+    "id": "com.apple.Music",
+    "name": "Apple Music",
+    "bundleIdentifier": "com.apple.Music",
+    "icon": "music.note.list",
+    "appleScriptName": "Music",
+    "supportsNowPlaying": true
+  },
+  {
+    "id": "org.videolan.vlc",
+    "name": "VLC",
+    "bundleIdentifier": "org.videolan.vlc",
+    "icon": "play.rectangle",
+    "appleScriptName": "VLC",
+    "supportsNowPlaying": true
+  },
+  {
+    "id": "com.apple.iTunes",
+    "name": "iTunes",
+    "bundleIdentifier": "com.apple.iTunes",
+    "icon": "music.note",
+    "appleScriptName": "iTunes",
+    "supportsNowPlaying": true
+  },
+  {
+    "id": "com.amazon.music",
+    "name": "Amazon Music",
+    "bundleIdentifier": "com.amazon.music",
+    "icon": "music.note",
+    "appleScriptName": "Amazon Music",
+    "supportsNowPlaying": false
+  },
+  {
+    "id": "com.tidal.desktop",
+    "name": "Tidal",
+    "bundleIdentifier": "com.tidal.desktop",
+    "icon": "music.note",
+    "appleScriptName": "TIDAL",
+    "supportsNowPlaying": false
+  },
+  {
+    "id": "com.deezer.deezer-desktop",
+    "name": "Deezer",
+    "bundleIdentifier": "com.deezer.deezer-desktop",
+    "icon": "music.note",
+    "appleScriptName": "Deezer",
+    "supportsNowPlaying": false
+  },
+  {
+    "id": "com.audirvana.Audirvana-Plus",
+    "name": "Audirvana",
+    "bundleIdentifier": "com.audirvana.Audirvana-Plus",
+    "icon": "hifispeaker",
+    "appleScriptName": "Audirvana",
+    "supportsNowPlaying": false
+  },
+  {
+    "id": "com.plexapp.plexamp",
+    "name": "Plexamp",
+    "bundleIdentifier": "com.plexapp.plexamp",
+    "icon": "music.note",
+    "appleScriptName": "Plexamp",
+    "supportsNowPlaying": false
+  },
+  {
+    "id": "com.vox.vox",
+    "name": "Vox",
+    "bundleIdentifier": "com.vox.vox",
+    "icon": "music.note",
+    "appleScriptName": "Vox",
+    "supportsNowPlaying": false
+  }
+]

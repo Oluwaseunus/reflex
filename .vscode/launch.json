@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:reflex}",
+      "name": "Debug Reflex",
+      "target": "Reflex",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug Reflex"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:reflex}",
+      "name": "Release Reflex",
+      "target": "Reflex",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release Reflex"
+    }
+  ]
+}

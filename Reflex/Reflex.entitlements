@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for AppleScript automation -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- Disable App Sandbox (required for CGEvent tap) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Hardened Runtime (required for notarization) -->
+    <!-- Note: This is typically set in Xcode build settings, not in entitlements -->
+</dict>
+</plist>
