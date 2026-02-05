@@ -81,13 +81,19 @@ final class SmartRouter: ObservableObject {
     private func determineTargetApp() -> MediaApp? {
         let prefs = preferences.prefs
 
-        // Priority 1: Auto-switch to currently playing app
+        // Priority 1: Auto-switch to currently playing app (if enabled)
         if prefs.autoSwitchEnabled, let playingApp = findPlayingApp() {
             Logger.shared.routing("Auto-switch: found playing app \(playingApp.name)")
             return playingApp
         }
 
-        // Priority 2: Last used app (if still running)
+        // Priority 2: Manually selected app (via status bar menu)
+        if let selectedApp = activeApp, selectedApp.isRunning {
+            Logger.shared.routing("Using manually selected app: \(selectedApp.name)")
+            return selectedApp
+        }
+
+        // Priority 3: Last used app (if still running)
         if let lastUsedId = prefs.lastUsedApp,
            let lastApp = appDetector.availableApps.first(where: {
                $0.id == lastUsedId && $0.isRunning
@@ -96,7 +102,7 @@ final class SmartRouter: ObservableObject {
             return lastApp
         }
 
-        // Priority 3: First running favorite
+        // Priority 4: First running favorite
         let runningFavorites = appDetector.availableApps.filter {
             prefs.favoriteApps.contains($0.id) && $0.isRunning
         }
@@ -105,7 +111,7 @@ final class SmartRouter: ObservableObject {
             return firstFavorite
         }
 
-        // Priority 4: Any running media app
+        // Priority 5: Any running media app
         if let anyRunning = appDetector.runningApps.first {
             Logger.shared.routing("Using first running app: \(anyRunning.name)")
             return anyRunning
@@ -149,7 +155,7 @@ final class SmartRouter: ObservableObject {
         Logger.shared.info("Stopped playback state polling")
     }
 
-    /// Poll for current playback state
+    /// Poll for current playback state and update routing/display accordingly
     private func pollPlaybackState() {
         // First check if any app is playing
         if let playingApp = findPlayingApp() {

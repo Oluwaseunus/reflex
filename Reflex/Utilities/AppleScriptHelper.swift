@@ -222,4 +222,123 @@ final class AppleScriptHelper {
         """
         _ = execute(script)
     }
+
+    /// Run a script and return the string result
+    static func runScript(_ script: String) -> String? {
+        let result = execute(script)
+        return result.output
+    }
+
+    // MARK: - Playback Info
+
+    /// Get current playback position in seconds
+    static func getPlaybackPosition(from app: MediaApp) -> Double? {
+        let script: String
+        switch app.bundleIdentifier {
+        case "com.spotify.client":
+            script = """
+            tell application "Spotify"
+                if it is running then
+                    return player position
+                end if
+            end tell
+            return 0
+            """
+        case "com.apple.Music":
+            script = """
+            tell application "Music"
+                if it is running then
+                    return player position
+                end if
+            end tell
+            return 0
+            """
+        default:
+            return nil
+        }
+
+        let result = execute(script)
+        guard let output = result.output else { return nil }
+        return Double(output)
+    }
+
+    /// Get track duration in seconds
+    static func getTrackDuration(from app: MediaApp) -> Double? {
+        let script: String
+        switch app.bundleIdentifier {
+        case "com.spotify.client":
+            script = """
+            tell application "Spotify"
+                if it is running then
+                    return (duration of current track) / 1000
+                end if
+            end tell
+            return 0
+            """
+        case "com.apple.Music":
+            script = """
+            tell application "Music"
+                if it is running then
+                    return duration of current track
+                end if
+            end tell
+            return 0
+            """
+        default:
+            return nil
+        }
+
+        let result = execute(script)
+        guard let output = result.output else { return nil }
+        return Double(output)
+    }
+
+    /// Get album artwork image asynchronously
+    static func getArtwork(from app: MediaApp) async -> NSImage? {
+        switch app.bundleIdentifier {
+        case "com.spotify.client":
+            let script = """
+            tell application "Spotify"
+                if it is running then
+                    return artwork url of current track
+                end if
+            end tell
+            return ""
+            """
+            let result = execute(script)
+            guard let urlString = result.output, urlString.hasPrefix("http"),
+                  let url = URL(string: urlString) else {
+                return nil
+            }
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                return NSImage(data: data)
+            } catch {
+                Logger.shared.appleScriptError("Failed to fetch Spotify artwork: \(error)", script: "")
+                return nil
+            }
+
+        case "com.apple.Music":
+            let script = """
+            tell application "Music"
+                if it is running then
+                    try
+                        set artworkData to raw data of artwork 1 of current track
+                        return artworkData
+                    end try
+                end if
+            end tell
+            return ""
+            """
+            let appleScript = NSAppleScript(source: script)
+            var errorDict: NSDictionary?
+            let output = appleScript?.executeAndReturnError(&errorDict)
+            if errorDict != nil { return nil }
+            guard let data = output?.data else { return nil }
+            return NSImage(data: data)
+
+        default:
+            return nil
+        }
+    }
 }

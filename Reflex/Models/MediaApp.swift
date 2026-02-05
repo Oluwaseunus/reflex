@@ -68,4 +68,5 @@ struct MediaApp: Identifiable, Codable, Equatable, Hashable {
     static func == (lhs: MediaApp, rhs: MediaApp) -> Bool {
         lhs.id == rhs.id
     }
+
 }
