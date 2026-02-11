@@ -6,7 +6,6 @@ struct WelcomeView: View {
     @Environment(\.dismiss) private var dismiss
 
     @EnvironmentObject var preferences: PreferencesManager
-    @EnvironmentObject var appDetector: MediaAppDetector
 
     enum OnboardingStep: Int, CaseIterable {
         case welcome = 0
@@ -167,67 +166,40 @@ struct OnboardingFeatureRow: View {
 /// App selection step during onboarding
 struct AppSelectionStepView: View {
     @EnvironmentObject var preferences: PreferencesManager
-    @EnvironmentObject var appDetector: MediaAppDetector
 
     var body: some View {
         VStack(spacing: 24) {
             // Header
             VStack(spacing: 8) {
-                Image(systemName: "star.circle.fill")
+                Image(systemName: "sparkle.magnifyingglass")
                     .font(.system(size: 48))
                     .foregroundColor(.accentColor)
 
-                Text("Select Your Favorite Apps")
+                Text("Spotify First")
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("These will appear in your quick switch menu")
+                Text("Reflex currently routes media keys to Spotify. Multi-app selection will return once core routing is stable.")
                     .font(.subheadline)
+                    .multilineTextAlignment(.center)
                     .foregroundColor(.secondary)
             }
             .padding(.top, 24)
 
-            // Apps list
-            List {
-                ForEach(appDetector.installedApps) { app in
-                    HStack {
-                        Image(systemName: app.icon ?? "app")
-                            .frame(width: 24)
-                            .foregroundColor(.accentColor)
+            Spacer()
 
-                        Text(app.name)
-
-                        Spacer()
-
-                        if app.isRunning {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 8, height: 8)
-                        }
-
-                        Toggle("", isOn: Binding(
-                            get: { preferences.isFavorite(app.id) },
-                            set: { isFavorite in
-                                if isFavorite {
-                                    preferences.addFavorite(app.id)
-                                } else {
-                                    preferences.removeFavorite(app.id)
-                                }
-                            }
-                        ))
-                        .labelsHidden()
-                    }
-                }
+            Button(action: {
+                preferences.completeOnboarding()
+            }) {
+                Text("Continue")
+                    .font(.headline)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(Color.accentColor)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
             }
-            .listStyle(.inset(alternatesRowBackgrounds: true))
-            .frame(maxHeight: 250)
-
-            // Info
-            if appDetector.installedApps.isEmpty {
-                Text("No supported media apps found. You can add more later.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            .buttonStyle(.plain)
         }
         .padding()
     }

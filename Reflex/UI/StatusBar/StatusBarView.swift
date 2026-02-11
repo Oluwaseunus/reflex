@@ -6,23 +6,17 @@ struct StatusBarView: View {
     @EnvironmentObject var stateManager: PlaybackStateManager
     @EnvironmentObject var preferences: PreferencesManager
     @EnvironmentObject var router: SmartRouter
-    @EnvironmentObject var appDetector: MediaAppDetector
 
     @State private var showingPreferences = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if let state = stateManager.currentState, state.isPlaying {
+            if let state = stateManager.currentState {
                 NowPlayingCard(state: state, router: router, stateManager: stateManager)
             } else {
                 headerSection
                     .padding()
             }
-
-            Divider()
-
-            quickSwitchSection
-                .padding()
 
             Divider()
 
@@ -49,46 +43,6 @@ struct StatusBarView: View {
                     .help("Accessibility permission required")
             }
         }
-    }
-
-    // MARK: - Quick Switch Section
-
-    private var quickSwitchSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Quick Switch")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            if favoriteApps.isEmpty && appDetector.runningApps.isEmpty {
-                Text("No media apps running")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(appsToShow) { app in
-                    AppRowView(
-                        app: app,
-                        isActive: router.activeApp?.id == app.id,
-                        onSelect: { router.selectApp(app) }
-                    )
-                }
-            }
-        }
-    }
-
-    private var favoriteApps: [MediaApp] {
-        appDetector.availableApps.filter { app in
-            preferences.prefs.favoriteApps.contains(app.id) && app.isInstalled
-        }
-    }
-
-    private var appsToShow: [MediaApp] {
-        // Show favorites first, then other running apps
-        let favorites = favoriteApps.filter { $0.isRunning }
-        let otherRunning = appDetector.runningApps.filter { app in
-            !favorites.contains { $0.id == app.id }
-        }
-        return favorites + otherRunning
     }
 
     // MARK: - Actions Section
@@ -137,41 +91,6 @@ struct StatusBarView: View {
     }
 }
 
-/// Row view for a single app in the quick switch list
-struct AppRowView: View {
-    let app: MediaApp
-    let isActive: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                Image(systemName: app.icon ?? "app")
-                    .frame(width: 20)
-                    .foregroundColor(isActive ? .accentColor : .primary)
-
-                Text(app.name)
-                    .foregroundColor(isActive ? .accentColor : .primary)
-
-                Spacer()
-
-                if !app.isRunning {
-                    Text("Not Running")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                } else if isActive {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.accentColor)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!app.isRunning)
-        .opacity(app.isRunning ? 1.0 : 0.5)
-    }
-}
-
 /// Modern Now Playing card with album art, controls, and progress
 struct NowPlayingCard: View {
     let state: PlaybackState
@@ -180,8 +99,9 @@ struct NowPlayingCard: View {
 
     @State private var currentPosition: Double = 0
     @State private var duration: Double = 0
-    @State private var albumArtwork: NSImage?
     @State private var isPlaying: Bool = true
+    @State private var isMuted: Bool = false
+    @State private var currentVolume: Int = 50
     @State private var lastTrackId: String?
     @State private var timerCancellable: AnyCancellable?
 
@@ -194,49 +114,89 @@ struct NowPlayingCard: View {
                     .foregroundColor(.secondary)
                     .tracking(1)
                 Spacer()
-                Image(systemName: "speaker.wave.3.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                Button(action: toggleMute) {
+                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 14, height: 14, alignment: .center)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .foregroundColor(.secondary)
+                .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
             }
             .padding(.bottom, 12)
 
             // Main content: Album art and controls
             HStack(spacing: 12) {
                 // Album artwork
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                        .frame(width: 120, height: 120)
-
-                    if let artwork = albumArtwork {
-                        Image(nsImage: artwork)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
+                Button(action: openTrackLink) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(nsColor: .controlBackgroundColor))
                             .frame(width: 120, height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 32))
-                            .foregroundColor(.secondary)
+
+                        if let artwork = stateManager.currentArtwork {
+                            Image(nsImage: artwork)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 120, height: 120)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 32))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .disabled(!canOpenTrack)
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                 // Right side: Track info, controls, and progress
                 VStack(alignment: .leading, spacing: 0) {
-                    // Track name
-                    Text(state.trackName ?? "Unknown Track")
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(2)
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // Track name with hover marquee
+                    Button(action: openTrackLink) {
+                        HoverMarquee(text: state.trackName ?? "Unknown Track")
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 18, alignment: .leading)
+                            .accessibilityLabel(state.trackName ?? "Unknown Track")
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .disabled(!canOpenTrack)
 
-                    // Artist and album
-                    Text(artistAlbumText)
-                        .font(.system(size: 11))
+                    // Artist and album deep links
+                    HStack(spacing: 4) {
+                        Button(action: openArtistLink) {
+                            Text(state.artistName ?? "Unknown Artist")
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .padding(.top, 2)
+                        .disabled(!canOpenArtist)
+
+                        if state.albumName != nil {
+                            Text("-")
+                                .foregroundColor(.secondary)
+
+                            Button(action: openTrackLink) {
+                                Text(state.albumName ?? "")
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .foregroundColor(.secondary)
+                            .disabled(!canOpenTrack)
+                        }
+                    }
+                    .font(.system(size: 11))
+                    .padding(.top, 2)
 
                     Spacer()
 
@@ -252,12 +212,12 @@ struct NowPlayingCard: View {
                         .buttonStyle(.plain)
                         .focusable(false)
 
-                        Spacer(minLength: 16)
+                    Spacer(minLength: 16)
 
-                        Button(action: { sendCommand(.playPause) }) {
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 26))
-                                .foregroundColor(.primary)
+                    Button(action: { sendCommand(.playPause) }) {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 26))
+                            .foregroundColor(.primary)
                         }
                         .buttonStyle(.plain)
                         .focusable(false)
@@ -294,52 +254,80 @@ struct NowPlayingCard: View {
                             }
                         }
                         .frame(height: 3)
+                        .padding(.horizontal, 4)
+                        .layoutPriority(1)
 
                         // Time labels
                         HStack {
                             Text(formatTime(currentPosition))
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundColor(.secondary)
+                                .frame(minWidth: 46, alignment: .leading)
                             Spacer()
                             Text(formatTime(duration))
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundColor(.secondary)
+                                .frame(minWidth: 46, alignment: .trailing)
                         }
                     }
                 }
                 .frame(height: 120)
             }
         }
-        .padding(14)
-        .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
-        .onAppear {
-            isPlaying = state.isPlaying
-            loadPlaybackInfo()
-            timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
-                .autoconnect()
-                .sink { _ in
-                    // Reconcile isPlaying with actual state
-                    if let currentState = stateManager.currentState {
-                        isPlaying = currentState.isPlaying
+            .padding(14)
+            .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
+            .onAppear {
+                isPlaying = state.isPlaying
+                loadVolumeInfo()
+                loadPlaybackInfo()
+                timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { _ in
+                        // Reconcile isPlaying with actual state
+                        if let currentState = stateManager.currentState {
+                            isPlaying = currentState.isPlaying
+                        }
+                        // Keep muted state in sync if external change
+                        syncVolumeState()
+                        if isPlaying && currentPosition < duration {
+                            currentPosition += 1
+                        }
+                        loadPlaybackInfo()
                     }
-                    if isPlaying && currentPosition < duration {
-                        currentPosition += 1
-                    }
-                    loadPlaybackInfo()
-                }
-        }
+            }
         .onDisappear {
             timerCancellable?.cancel()
             timerCancellable = nil
         }
     }
 
-    private var artistAlbumText: String {
-        let artist = state.artistName ?? "Unknown Artist"
-        if let album = state.albumName {
-            return "\(artist) – \(album)"
-        }
-        return artist
+    private var canOpenAlbum: Bool {
+        state.albumName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
+    private var canOpenTrack: Bool {
+        state.trackName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
+    private var canOpenArtist: Bool {
+        state.artistName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
+    private func openTrackLink() {
+        guard canOpenTrack, let uri = AppleScriptHelper.currentSpotifyTrackURI() else { return }
+        AppleScriptHelper.openSpotifyURI(uri)
+    }
+
+    private func openAlbumLink() {
+        guard canOpenAlbum, let album = state.albumName else { return }
+        let uri = AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
+        AppleScriptHelper.openSpotifyURI(uri)
+    }
+
+    private func openArtistLink() {
+        guard canOpenArtist, let artist = state.artistName else { return }
+        let uri = AppleScriptHelper.spotifyArtistSearchURI(artist: artist)
+        AppleScriptHelper.openSpotifyURI(uri)
     }
 
     private func progressWidth(totalWidth: CGFloat) -> CGFloat {
@@ -360,6 +348,31 @@ struct NowPlayingCard: View {
         router.routeCommand(command)
     }
 
+    private func toggleMute() {
+        if let muted = router.toggleSpotifyMute() {
+            isMuted = muted
+            if !muted, let volume = AppleScriptHelper.getVolume(for: state.app!) {
+                currentVolume = volume
+            }
+        }
+    }
+
+    private func loadVolumeInfo() {
+        guard let app = state.app else { return }
+        if let vol = AppleScriptHelper.getVolume(for: app) {
+            currentVolume = vol
+            isMuted = vol == 0
+        }
+    }
+
+    private func syncVolumeState() {
+        guard let app = state.app else { return }
+        if let vol = AppleScriptHelper.getVolume(for: app) {
+            isMuted = vol == 0
+            if vol > 0 { currentVolume = vol }
+        }
+    }
+
     private func loadPlaybackInfo() {
         guard let app = state.app else { return }
 
@@ -368,22 +381,82 @@ struct NowPlayingCard: View {
             self.currentPosition = position
         }
 
-        // Only fetch artwork and duration on track change
+        // Track change detection
         let trackId = "\(state.trackName ?? "")||\(state.artistName ?? "")"
-        guard trackId != lastTrackId else { return }
-        lastTrackId = trackId
+        let trackChanged = trackId != lastTrackId
+        if trackChanged {
+            lastTrackId = trackId
+        }
 
         if let dur = AppleScriptHelper.getTrackDuration(from: app) {
             self.duration = dur
         }
+    }
+}
 
-        Task {
-            if let image = await AppleScriptHelper.getArtwork(from: app) {
-                await MainActor.run {
-                    self.albumArtwork = image
+/// Hover-triggered marquee for overflowing text
+struct HoverMarquee: View {
+    let text: String
+    var delay: Double = 0.8
+    var speed: Double = 20.0 // points per second
+
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @State private var isHovering: Bool = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let available = geo.size.width
+            ZStack(alignment: .leading) {
+                Text(text)
+                    .lineLimit(1)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear
+                                .onAppear { textWidth = proxy.size.width }
+                        }
+                    )
+                    .offset(x: offset)
+                    .animation(.linear(duration: animationDuration(available: available))
+                        .repeatForever(autoreverses: false), value: offset)
+            }
+            .onAppear {
+                containerWidth = available
+            }
+            .onChange(of: available) { newValue in
+                containerWidth = newValue
+                reset()
+            }
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    startIfNeeded()
+                } else {
+                    reset()
                 }
             }
+            .clipped()
         }
+    }
+
+    private func startIfNeeded() {
+        guard textWidth > containerWidth else { return }
+        offset = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard isHovering else { return }
+            offset = -(textWidth - containerWidth + 12) // slight gap
+        }
+    }
+
+    private func reset() {
+        offset = 0
+    }
+
+    private func animationDuration(available: CGFloat) -> Double {
+        let distance = max(textWidth - available, 0)
+        if distance == 0 { return 0.1 }
+        return Double(distance) / speed
     }
 }
 
@@ -418,7 +491,6 @@ struct StatusBarView_Previews: PreviewProvider {
                 preferences: PreferencesManager.shared,
                 stateManager: PlaybackStateManager()
             ))
-            .environmentObject(MediaAppDetector())
     }
 }
 #endif

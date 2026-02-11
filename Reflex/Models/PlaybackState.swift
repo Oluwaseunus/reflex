@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 /// Represents the current playback state of a media app
 struct PlaybackState {
@@ -36,6 +37,9 @@ struct PlaybackState {
 class PlaybackStateManager: ObservableObject {
     /// Current playback state (nil if nothing detected)
     @Published var currentState: PlaybackState?
+
+    /// Current album artwork for the active track
+    @Published var currentArtwork: NSImage?
 
     /// The currently active/targeted media app
     @Published var activeApp: MediaApp?

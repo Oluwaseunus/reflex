@@ -118,7 +118,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create media key listener
         mediaKeyListener = MediaKeyListener()
         mediaKeyListener.onMediaKeyPressed = { [weak self] command in
-            self?.smartRouter.routeCommand(command)
+            // Only intercept when a registered media app is actively playing
+            self?.smartRouter.routeCommand(command, requirePlaying: true) ?? false
         }
 
         // Create status bar manager

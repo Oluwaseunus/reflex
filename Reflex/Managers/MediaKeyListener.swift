@@ -10,7 +10,8 @@ final class MediaKeyListener {
     private var runLoopSource: CFRunLoopSource?
 
     /// Callback when a media key is pressed
-    var onMediaKeyPressed: ((MediaCommand) -> Void)?
+    /// Return true to consume the event, false to let it pass through
+    var onMediaKeyPressed: ((MediaCommand) -> Bool)?
 
     /// Whether the listener is currently active
     private(set) var isListening: Bool = false
@@ -175,10 +176,19 @@ private func parseMediaKeyEvent(event: CGEvent, listener: MediaKeyListener) -> U
     // ALWAYS capture and route to our target media app
     Logger.shared.event("Media key captured: \(command.displayName)")
 
-    DispatchQueue.main.async {
-        listener.onMediaKeyPressed?(command)
+    // Ask the router whether to consume this key
+    var shouldConsume = false
+    if let handler = listener.onMediaKeyPressed {
+        // Ensure routing happens on the main thread to avoid reentrancy issues with NSAppleScript
+        if Thread.isMainThread {
+            shouldConsume = handler(command)
+        } else {
+            DispatchQueue.main.sync {
+                shouldConsume = handler(command)
+            }
+        }
     }
 
-    // Consume the event - prevent any other app from receiving it
-    return nil
+    // Consume only when handler says so; otherwise let the system/browser receive it
+    return shouldConsume ? nil : Unmanaged.passRetained(event)
 }

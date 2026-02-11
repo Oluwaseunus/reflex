@@ -341,4 +341,130 @@ final class AppleScriptHelper {
             return nil
         }
     }
+
+    // MARK: - Volume Control
+
+    /// Get current volume (0-100) for an app
+    static func getVolume(for app: MediaApp) -> Int? {
+        let script: String
+        switch app.bundleIdentifier {
+        case "com.spotify.client":
+            script = """
+            tell application "Spotify"
+                if it is running then
+                    return sound volume
+                end if
+            end tell
+            return -1
+            """
+        default:
+            return nil
+        }
+
+        let result = execute(script)
+        guard let output = result.output, let value = Int(output), value >= 0 else { return nil }
+        return value
+    }
+
+    /// Set volume (0-100) for an app
+    @discardableResult
+    static func setVolume(_ value: Int, for app: MediaApp) -> Bool {
+        let clamped = max(0, min(100, value))
+        let script: String
+        switch app.bundleIdentifier {
+        case "com.spotify.client":
+            script = """
+            tell application "Spotify"
+                if it is running then
+                    set sound volume to \(clamped)
+                    return sound volume
+                end if
+            end tell
+            return -1
+            """
+        default:
+            return false
+        }
+
+        let result = execute(script)
+        return result.success
+    }
+
+    // MARK: - Spotify Deep Links
+
+    /// Open a Spotify URI/URL (e.g. spotify:album:..., spotify:artist:..., spotify:search:..., https://open.spotify.com/...)
+    static func openSpotifyURI(_ uri: String) {
+        guard let url = URL(string: uri) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Resolve the currently playing/current selected Spotify track into a canonical spotify:track:<id> URI.
+    static func currentSpotifyTrackURI() -> String? {
+        let script = """
+        tell application "Spotify"
+            if it is running then
+                try
+                    set rawUrl to spotify url of current track
+                    return rawUrl
+                on error
+                    try
+                        set rawId to id of current track
+                        return rawId
+                    on error
+                        return ""
+                    end try
+                end try
+            end if
+        end tell
+        return ""
+        """
+
+        let result = execute(script)
+        guard let output = result.output, !output.isEmpty else { return nil }
+        return normalizeSpotifyTrackURI(output)
+    }
+
+    /// Build a Spotify URI that searches for an album (and optional artist).
+    /// Spotify AppleScript does not expose album IDs directly, so this uses URI-based search.
+    static func spotifyAlbumSearchURI(album: String, artist: String?) -> String {
+        let query: String
+        if let artist = artist, !artist.isEmpty {
+            query = "album:\(album) artist:\(artist)"
+        } else {
+            query = "album:\(album)"
+        }
+        return "spotify:search:\(encodeSpotifyQuery(query))"
+    }
+
+    /// Build a Spotify URI that searches for an artist.
+    /// Spotify AppleScript does not expose artist IDs directly, so this uses URI-based search.
+    static func spotifyArtistSearchURI(artist: String) -> String {
+        let query = "artist:\(artist)"
+        return "spotify:search:\(encodeSpotifyQuery(query))"
+    }
+
+    private static func normalizeSpotifyTrackURI(_ raw: String) -> String? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { return nil }
+        if value.hasPrefix("spotify:track:") { return value }
+
+        if value.hasPrefix("https://open.spotify.com/track/") || value.hasPrefix("http://open.spotify.com/track/") {
+            let parts = value.components(separatedBy: "/track/")
+            guard parts.count > 1 else { return nil }
+            let tail = parts[1]
+            let id = tail.components(separatedBy: CharacterSet(charactersIn: "?/")).first ?? ""
+            return id.isEmpty ? nil : "spotify:track:\(id)"
+        }
+
+        // Some AppleScript returns just the ID.
+        if !value.contains(":") && !value.contains("/") {
+            return "spotify:track:\(value)"
+        }
+
+        return nil
+    }
+
+    private static func encodeSpotifyQuery(_ query: String) -> String {
+        query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+    }
 }

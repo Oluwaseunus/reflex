@@ -6,6 +6,8 @@ import Combine
 final class StatusBarManager: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
+    private var eventMonitor: Any?
+    private var popoverAnchorRect: NSRect?
 
     /// Current app being displayed
     @Published var currentApp: MediaApp?
@@ -180,13 +182,22 @@ final class StatusBarManager: NSObject, ObservableObject {
             popover?.contentViewController = NSHostingController(rootView: contentView)
         }
 
-        popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // Lock anchor while popover is open
+        if popoverAnchorRect == nil || popover?.isShown == false {
+            let bounds = button.bounds
+            popoverAnchorRect = NSRect(x: bounds.midX, y: bounds.minY, width: 1, height: bounds.height)
+        }
+
+        popover?.show(relativeTo: popoverAnchorRect ?? button.bounds, of: button, preferredEdge: .minY)
+        startEventMonitor()
         Logger.shared.debug("Popover shown")
     }
 
     /// Close the popover
     func closePopover() {
         popover?.performClose(nil)
+        stopEventMonitor()
+        popoverAnchorRect = nil
         Logger.shared.debug("Popover closed")
     }
 
@@ -215,35 +226,6 @@ final class StatusBarManager: NSObject, ObservableObject {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Quick switch apps
-        let switchItem = NSMenuItem(title: "Switch App", action: nil, keyEquivalent: "")
-        let switchSubmenu = NSMenu()
-
-        for app in appDetector?.runningApps ?? [] {
-            let appItem = NSMenuItem(
-                title: app.name,
-                action: #selector(selectApp(_:)),
-                keyEquivalent: ""
-            )
-            appItem.target = self
-            appItem.representedObject = app
-            if app.id == router?.activeApp?.id {
-                appItem.state = .on
-            }
-            switchSubmenu.addItem(appItem)
-        }
-
-        if switchSubmenu.items.isEmpty {
-            let noAppsItem = NSMenuItem(title: "No apps running", action: nil, keyEquivalent: "")
-            noAppsItem.isEnabled = false
-            switchSubmenu.addItem(noAppsItem)
-        }
-
-        switchItem.submenu = switchSubmenu
-        menu.addItem(switchItem)
-
-        menu.addItem(NSMenuItem.separator())
-
         // Preferences
         menu.addItem(NSMenuItem(
             title: "Preferences...",
@@ -265,9 +247,33 @@ final class StatusBarManager: NSObject, ObservableObject {
         statusItem?.menu = nil
     }
 
-    @objc private func selectApp(_ sender: NSMenuItem) {
-        guard let app = sender.representedObject as? MediaApp else { return }
-        router?.selectApp(app)
+    // MARK: - Event Monitor
+
+    private func startEventMonitor() {
+        stopEventMonitor()
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self = self,
+                  let popover = self.popover,
+                  popover.isShown else { return }
+
+            if let window = popover.contentViewController?.view.window,
+               event.window == window {
+                return // allow interactions inside
+            }
+
+            DispatchQueue.main.async {
+                popover.animates = true
+                popover.performClose(event)
+                self.stopEventMonitor()
+            }
+        }
+    }
+
+    private func stopEventMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
     }
 
     @objc private func openPreferences() {
