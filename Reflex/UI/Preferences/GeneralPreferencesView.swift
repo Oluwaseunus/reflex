@@ -13,9 +13,9 @@ struct GeneralPreferencesView: View {
                 Toggle("Enable smart auto-switching", isOn: $preferences.prefs.autoSwitchEnabled)
                     .help("Automatically route to whichever app is currently playing")
 
-                Toggle("Fall back to system when no app running",
+                Toggle("Fall back to system when no media app is playing",
                        isOn: $preferences.prefs.fallbackToSystem)
-                    .help("Let system handle media keys when no media app is available")
+                    .help("Let system handle media keys when no registered media app is actively playing")
 
                 Toggle("Route volume keys through Reflex",
                        isOn: $preferences.prefs.enableVolumeKeys)
@@ -34,6 +34,11 @@ struct GeneralPreferencesView: View {
                        isOn: $preferences.prefs.showTrackInfo)
                     .disabled(!preferences.prefs.showNowPlaying)
                     .help("Display current track name in the menu bar")
+
+                Toggle("Include artist name",
+                       isOn: $preferences.prefs.showArtistInMenuBar)
+                    .disabled(!preferences.prefs.showNowPlaying || !preferences.prefs.showTrackInfo)
+                    .help("Show \"song - artist\" in the menu bar when available")
             } header: {
                 Text("Display")
             }

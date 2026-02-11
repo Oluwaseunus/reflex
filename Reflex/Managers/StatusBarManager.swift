@@ -109,12 +109,20 @@ final class StatusBarManager: NSObject, ObservableObject {
         guard let button = statusItem?.button,
               let prefs = preferences?.prefs else { return }
 
-        if let state = state, state.isPlaying, prefs.showNowPlaying {
+        if let state = state, prefs.showNowPlaying {
             // Show now playing info
             if prefs.showTrackInfo, let track = state.trackName {
-                // Show track name (truncated)
-                let truncatedTrack = track.count > 30 ? String(track.prefix(27)) + "..." : track
-                button.title = " \(truncatedTrack)"
+                var displayText = track
+                if prefs.showArtistInMenuBar, let artist = state.artistName, !artist.isEmpty {
+                    displayText = "\(track) - \(artist)"
+                }
+                if !state.isPlaying {
+                    displayText = "⏸ " + displayText
+                }
+
+                // Truncate to keep menu bar compact
+                let truncated = displayText.count > 32 ? String(displayText.prefix(29)) + "..." : displayText
+                button.title = " \(truncated)"
             } else if let appName = state.app?.name {
                 // Just show app name
                 button.title = " \(appName)"
