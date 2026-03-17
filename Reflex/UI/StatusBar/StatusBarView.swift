@@ -104,6 +104,9 @@ struct NowPlayingCard: View {
     @State private var currentVolume: Int = 50
     @State private var lastTrackId: String?
     @State private var timerCancellable: AnyCancellable?
+    @State private var isHoveringProgress: Bool = false
+    @State private var isScrubbing: Bool = false
+    @State private var scrubPosition: Double = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -241,25 +244,61 @@ struct NowPlayingCard: View {
                     // Progress bar
                     VStack(spacing: 4) {
                         GeometryReader { geometry in
+                            let totalWidth = geometry.size.width
+                            let displayPosition = isScrubbing ? scrubPosition : currentPosition
+                            let fillWidth = progressWidth(for: displayPosition, totalWidth: totalWidth)
+
                             ZStack(alignment: .leading) {
                                 // Background track
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(Color(nsColor: .separatorColor))
                                     .frame(height: 3)
 
-                                // Progress
+                                // Progress fill
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(Color.primary)
-                                    .frame(width: progressWidth(totalWidth: geometry.size.width), height: 3)
+                                    .frame(width: fillWidth, height: 3)
+
+                                // Scrub handle
+                                Circle()
+                                    .fill(Color.primary)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: max(0, min(fillWidth - 5, totalWidth - 10)))
+                                    .opacity(isHoveringProgress || isScrubbing ? 1 : 0)
                             }
+                            .frame(height: 10)
+                            .contentShape(Rectangle())
+                            .onHover { hovering in
+                                isHoveringProgress = hovering
+                            }
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        guard duration > 0 else { return }
+                                        isScrubbing = true
+                                        let fraction = max(0, min(1, value.location.x / totalWidth))
+                                        scrubPosition = Double(fraction) * duration
+                                    }
+                                    .onEnded { value in
+                                        guard duration > 0, let app = state.app else {
+                                            isScrubbing = false
+                                            return
+                                        }
+                                        let fraction = max(0, min(1, value.location.x / totalWidth))
+                                        let seekTo = Double(fraction) * duration
+                                        currentPosition = seekTo
+                                        AppleScriptHelper.setPlaybackPosition(seekTo, for: app)
+                                        isScrubbing = false
+                                    }
+                            )
                         }
-                        .frame(height: 3)
+                        .frame(height: 10)
                         .padding(.horizontal, 4)
                         .layoutPriority(1)
 
                         // Time labels
                         HStack {
-                            Text(formatTime(currentPosition))
+                            Text(formatTime(isScrubbing ? scrubPosition : currentPosition))
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundColor(.secondary)
                                 .frame(minWidth: 46, alignment: .leading)
@@ -330,9 +369,9 @@ struct NowPlayingCard: View {
         AppleScriptHelper.openSpotifyURI(uri)
     }
 
-    private func progressWidth(totalWidth: CGFloat) -> CGFloat {
+    private func progressWidth(for position: Double, totalWidth: CGFloat) -> CGFloat {
         guard duration > 0 else { return 0 }
-        return totalWidth * CGFloat(currentPosition / duration)
+        return totalWidth * CGFloat(position / duration)
     }
 
     private func formatTime(_ seconds: Double) -> String {

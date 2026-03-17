@@ -342,6 +342,36 @@ final class AppleScriptHelper {
         }
     }
 
+    /// Set playback position in seconds
+    @discardableResult
+    static func setPlaybackPosition(_ position: Double, for app: MediaApp) -> Bool {
+        let rounded = String(format: "%.1f", position)
+        let script: String
+        switch app.bundleIdentifier {
+        case "com.spotify.client":
+            script = """
+            tell application "Spotify"
+                if it is running then
+                    set player position to \(rounded)
+                end if
+            end tell
+            """
+        case "com.apple.Music":
+            script = """
+            tell application "Music"
+                if it is running then
+                    set player position to \(rounded)
+                end if
+            end tell
+            """
+        default:
+            return false
+        }
+
+        let result = execute(script)
+        return result.success
+    }
+
     // MARK: - Volume Control
 
     /// Get current volume (0-100) for an app

@@ -3,11 +3,12 @@ import SwiftUI
 import Combine
 
 /// Manages the menu bar status item and popover
-final class StatusBarManager: NSObject, ObservableObject {
+final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var eventMonitor: Any?
     private var popoverAnchorRect: NSRect?
+    private var previousApp: NSRunningApplication?
 
     /// Current app being displayed
     @Published var currentApp: MediaApp?
@@ -179,6 +180,7 @@ final class StatusBarManager: NSObject, ObservableObject {
             popover = NSPopover()
             popover?.behavior = .transient
             popover?.animates = true
+            popover?.delegate = self
 
             // Create the SwiftUI view with environment objects
             let contentView = StatusBarView()
@@ -187,7 +189,8 @@ final class StatusBarManager: NSObject, ObservableObject {
                 .environmentObject(router)
                 .environmentObject(appDetector)
 
-            popover?.contentViewController = NSHostingController(rootView: contentView)
+            let hostingController = FirstMouseHostingController(rootView: contentView)
+            popover?.contentViewController = hostingController
         }
 
         // Lock anchor while popover is open
@@ -196,7 +199,15 @@ final class StatusBarManager: NSObject, ObservableObject {
             popoverAnchorRect = NSRect(x: bounds.midX, y: bounds.minY, width: 1, height: bounds.height)
         }
 
+        // Store the currently focused app before we steal focus
+        previousApp = NSWorkspace.shared.frontmostApplication
+
         popover?.show(relativeTo: popoverAnchorRect ?? button.bounds, of: button, preferredEdge: .minY)
+
+        // Activate the app and make the popover window key so gestures work immediately
+        NSApp.activate(ignoringOtherApps: true)
+        popover?.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
+
         startEventMonitor()
         Logger.shared.debug("Popover shown")
     }
@@ -204,8 +215,6 @@ final class StatusBarManager: NSObject, ObservableObject {
     /// Close the popover
     func closePopover() {
         popover?.performClose(nil)
-        stopEventMonitor()
-        popoverAnchorRect = nil
         Logger.shared.debug("Popover closed")
     }
 
@@ -253,6 +262,17 @@ final class StatusBarManager: NSObject, ObservableObject {
         statusItem?.menu = menu
         statusItem?.button?.performClick(nil)
         statusItem?.menu = nil
+    }
+
+    // MARK: - NSPopoverDelegate
+
+    func popoverDidClose(_ notification: Notification) {
+        stopEventMonitor()
+        popoverAnchorRect = nil
+        if let app = previousApp, !app.isTerminated {
+            app.activate()
+        }
+        previousApp = nil
     }
 
     // MARK: - Event Monitor
@@ -318,5 +338,21 @@ final class StatusBarManager: NSObject, ObservableObject {
             button.image = image
         }
         showPermissionWarning = true
+    }
+}
+
+/// NSHostingController that uses a view which accepts first mouse events.
+final class FirstMouseHostingController<Content: View>: NSHostingController<Content> {
+    override func loadView() {
+        super.loadView()
+        view = FirstMouseHostingView(rootView: rootView)
+    }
+}
+
+/// NSHostingView subclass that accepts first mouse events so clicks
+/// register immediately in popovers without a prior activation click.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
     }
 }
