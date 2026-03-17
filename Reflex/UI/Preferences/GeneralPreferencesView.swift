@@ -20,6 +20,10 @@ struct GeneralPreferencesView: View {
                 Toggle("Route volume keys through Reflex",
                        isOn: $preferences.prefs.enableVolumeKeys)
                     .help("Control volume of target app instead of system volume")
+
+                Toggle("Return focus to previous app when closing popover",
+                       isOn: $preferences.prefs.restoreFocusOnClose)
+                    .help("Restore focus to the app you were using when the popover is dismissed from the menu bar")
             } header: {
                 Text("Behavior")
             }

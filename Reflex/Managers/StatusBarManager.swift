@@ -9,6 +9,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
     private var eventMonitor: Any?
     private var popoverAnchorRect: NSRect?
     private var previousApp: NSRunningApplication?
+    private var closedViaStatusBar: Bool = false
 
     /// Current app being displayed
     @Published var currentApp: MediaApp?
@@ -214,6 +215,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
     /// Close the popover
     func closePopover() {
+        closedViaStatusBar = true
         popover?.performClose(nil)
         Logger.shared.debug("Popover closed")
     }
@@ -269,9 +271,11 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         stopEventMonitor()
         popoverAnchorRect = nil
-        if let app = previousApp, !app.isTerminated {
+        if closedViaStatusBar, preferences?.prefs.restoreFocusOnClose == true,
+           let app = previousApp, !app.isTerminated {
             app.activate()
         }
+        closedViaStatusBar = false
         previousApp = nil
     }
 
