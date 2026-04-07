@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "Reflex",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v14)
     ],
     targets: [
         .executableTarget(
