@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var nowPlayingManager: NowPlayingManager!
     private var systemNowPlayingMonitor: SystemNowPlayingMonitor!
     private var statusBarManager: StatusBarManager!
+    private var coreAudioActivityMonitor: CoreAudioActivityMonitor?
 
     /// Stores the play/pause decision between shouldConsumeMediaKey (tap thread)
     /// and onMediaKeyPressed (main thread). Protected by a lock.
@@ -113,6 +114,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlayingManager?.unregister()
         smartRouter?.stopPolling()
         systemNowPlayingMonitor?.stopMonitoring()
+        if #available(macOS 14.2, *) {
+            coreAudioActivityMonitor?.stop()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -209,6 +213,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create status bar manager
         statusBarManager = StatusBarManager()
+
+        // Start Core Audio activity monitor for logging (macOS 14.2+ only)
+        if #available(macOS 14.2, *) {
+            let monitor = CoreAudioActivityMonitor()
+
+            monitor.onActiveOutputsChanged = { [weak self] bundleIds in
+                guard let self = self else { return }
+                let label = bundleIds.isEmpty
+                    ? "(none)"
+                    : bundleIds.sorted().joined(separator: ", ")
+                DispatchQueue.main.async {
+                    self.logger.info("CoreAudioActivityMonitor: active output bundles=\(label)")
+                }
+            }
+
+            monitor.onProcessOutputChanged = { [weak self] pid, bundleId, isRunningOutput in
+                guard let self = self else { return }
+                let bundleLabel = bundleId ?? "(unknown)"
+                DispatchQueue.main.async {
+                    self.logger.info("CoreAudioActivityMonitor: output changed pid=\(pid) bundle=\(bundleLabel) runningOutput=\(isRunningOutput)")
+                }
+            }
+
+            monitor.start()
+            coreAudioActivityMonitor = monitor
+        } else {
+            logger.info("CoreAudioActivityMonitor: Core Audio activity monitoring unavailable (requires macOS 14.2+)")
+        }
 
         logger.debug("Managers initialized")
     }

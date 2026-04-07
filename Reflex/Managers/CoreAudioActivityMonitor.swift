@@ -63,11 +63,16 @@ final class CoreAudioActivityMonitor {
     /// We track whether it was registered so we can remove it on stop.
     private var _processListListenerRegistered = false
 
-    // MARK: - Optional logging callback (for Commit 3 wiring)
+    // MARK: - Optional logging callbacks (for Commit 3 wiring)
 
     /// Called on the Core Audio serial queue whenever the set of active output bundle IDs
     /// changes. Do **not** call AppleScript or update SwiftUI state directly from this callback.
     var onActiveOutputsChanged: ((Set<String>) -> Void)?
+
+    /// Called on the Core Audio serial queue when a single process flips its output state.
+    /// Parameters: (pid, bundleID or nil, isRunningOutput).
+    /// Do **not** call AppleScript or update SwiftUI state directly from this callback.
+    var onProcessOutputChanged: ((pid_t, String?, Bool) -> Void)?
 
     // MARK: - Thread-safe snapshot accessors
 
@@ -358,6 +363,8 @@ final class CoreAudioActivityMonitor {
         os_unfair_lock_unlock(&_lock)
 
         Logger.shared.debug("CoreAudioActivityMonitor: output changed pid=\(entry.pid) bundle=\(bundleID ?? "<unknown>") runningOutput=\(isRunningOutput)")
+
+        onProcessOutputChanged?(entry.pid, bundleID, isRunningOutput)
 
         rebuildActiveOutputSnapshot()
     }
