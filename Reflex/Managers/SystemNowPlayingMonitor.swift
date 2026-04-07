@@ -3,21 +3,8 @@ import Foundation
 /// Monitors the system's "Now Playing" app via the private MRMediaRemote framework.
 /// Polls periodically and caches the result for synchronous, thread-safe access
 /// from the CGEvent tap callback thread.
+// TODO: remove once CoreAudioActivityMonitor is the sole browser coexistence signal
 final class SystemNowPlayingMonitor {
-
-    /// Known browser bundle identifiers
-    private static let browserBundleIds: Set<String> = [
-        "com.apple.Safari",
-        "com.google.Chrome",
-        "com.google.Chrome.canary",
-        "org.mozilla.firefox",
-        "company.thebrowser.Browser",      // Arc
-        "com.microsoft.edgemac",           // Edge
-        "com.brave.Browser",
-        "com.operasoftware.Opera",
-        "com.vivaldi.Vivaldi",
-        "org.chromium.Chromium",
-    ]
 
     // MARK: - Thread-safe cached state
 
@@ -44,7 +31,7 @@ final class SystemNowPlayingMonitor {
     /// Thread-safe — reads from cached state.
     var isBrowserNowPlaying: Bool {
         guard let bundleId = nowPlayingBundleId else { return false }
-        return Self.browserBundleIds.contains(bundleId)
+        return BrowserBundleIDs.isBrowser(bundleId)
     }
 
     // MARK: - Reflex-filtering state (main thread only)

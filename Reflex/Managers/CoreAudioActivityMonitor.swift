@@ -14,23 +14,6 @@ import AppKit
 /// `kAudioProcessPropertyIsRunningOutput`) require that OS version.
 final class CoreAudioActivityMonitor {
 
-    // MARK: - Browser bundle IDs (duplicated from SystemNowPlayingMonitor; shared in Commit 4)
-
-    /// Known browser bundle identifiers. Duplicated here intentionally; will be extracted
-    /// to a shared utility in Commit 4.
-    private static let browserBundleIds: Set<String> = [
-        "com.apple.Safari",
-        "com.google.Chrome",
-        "com.google.Chrome.canary",
-        "org.mozilla.firefox",
-        "company.thebrowser.Browser",      // Arc
-        "com.microsoft.edgemac",           // Edge
-        "com.brave.Browser",
-        "com.operasoftware.Opera",
-        "com.vivaldi.Vivaldi",
-        "org.chromium.Chromium",
-    ]
-
     // MARK: - Per-process entry
 
     /// Snapshot of a single HAL process object.
@@ -97,7 +80,7 @@ final class CoreAudioActivityMonitor {
     var isBrowserOutputtingAudio: Bool {
         os_unfair_lock_lock(&_lock)
         defer { os_unfair_lock_unlock(&_lock) }
-        return !_activeOutputBundleIds.isDisjoint(with: Self.browserBundleIds)
+        return !_activeOutputBundleIds.isDisjoint(with: BrowserBundleIDs.browserBundleIds)
     }
 
     /// `true` if Spotify is currently outputting audio.

@@ -143,6 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // Create system now-playing monitor for browser detection
+        // TODO: remove after Core Audio browser detection is proven stable
         systemNowPlayingMonitor = SystemNowPlayingMonitor()
         systemNowPlayingMonitor.startMonitoring(interval: 2.0)
 
@@ -156,8 +157,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch command {
             case .playPause:
+                // Prefer Core Audio's process-output signal on macOS 14.2+; fall back
+                // to SystemNowPlayingMonitor on older systems or if the monitor is nil.
+                let browserIsNowPlaying: Bool
+                if #available(macOS 14.2, *), let coreAudio = self.coreAudioActivityMonitor {
+                    browserIsNowPlaying = coreAudio.isBrowserOutputtingAudio
+                } else {
+                    browserIsNowPlaying = self.systemNowPlayingMonitor.isBrowserNowPlaying
+                }
                 let decision = self.smartRouter.decidePlayPause(
-                    browserIsNowPlaying: self.systemNowPlayingMonitor.isBrowserNowPlaying
+                    browserIsNowPlaying: browserIsNowPlaying
                 )
                 self.setLastPlayPauseDecision(decision)
                 return decision != .passThrough
