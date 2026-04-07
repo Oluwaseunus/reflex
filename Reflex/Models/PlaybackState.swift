@@ -22,6 +22,11 @@ struct PlaybackState {
     /// When this state was captured
     let timestamp: Date
 
+    /// Stable identity key for this track (used for dismiss/change detection)
+    var trackKey: String {
+        "\(trackName ?? "")||\(artistName ?? "")"
+    }
+
     /// Check if state is stale (older than threshold)
     func isStale(threshold: TimeInterval = 30) -> Bool {
         Date().timeIntervalSince(timestamp) > threshold
@@ -77,6 +82,18 @@ class PlaybackStateManager: ObservableObject {
     /// Clear current state
     func clearState() {
         currentState = nil
+        lastUpdate = Date()
+    }
+
+    /// Key identifying the dismissed track (nil if nothing dismissed)
+    var dismissedTrackKey: String?
+
+    /// Dismiss the currently displayed track from the menu bar.
+    func dismissCurrentTrack() {
+        guard let state = currentState else { return }
+        dismissedTrackKey = state.trackKey
+        currentState = nil
+        currentArtwork = nil
         lastUpdate = Date()
     }
 }

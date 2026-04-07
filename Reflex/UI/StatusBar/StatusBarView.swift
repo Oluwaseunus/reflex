@@ -6,6 +6,7 @@ struct StatusBarView: View {
     @EnvironmentObject var stateManager: PlaybackStateManager
     @EnvironmentObject var preferences: PreferencesManager
     @EnvironmentObject var router: SmartRouter
+    @ObservedObject private var accessibilityManager = AccessibilityManager.shared
 
     @State private var showingPreferences = false
 
@@ -16,6 +17,12 @@ struct StatusBarView: View {
             } else {
                 headerSection
                     .padding()
+            }
+
+            if !accessibilityManager.hasPermission {
+                accessibilityWarningSection
+                    .padding(.horizontal)
+                    .padding(.bottom, 12)
             }
 
             Divider()
@@ -37,12 +44,52 @@ struct StatusBarView: View {
             Spacer()
 
             // Permission indicator
-            if !AccessibilityManager.shared.hasPermission {
+            if !accessibilityManager.hasPermission {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)
                     .help("Accessibility permission required")
             }
         }
+    }
+
+    private var accessibilityWarningSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Text("Accessibility Permission Required")
+                    .font(.headline)
+            }
+
+            Text("Reflex cannot capture media keys until Accessibility access is granted in System Settings.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button("Open Settings") {
+                    accessibilityManager.openSystemPreferences()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button("Retry") {
+                    _ = accessibilityManager.checkPermission()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.orange.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.orange.opacity(0.35), lineWidth: 1)
+        )
     }
 
     // MARK: - Actions Section
@@ -126,6 +173,18 @@ struct NowPlayingCard: View {
                 .focusable(false)
                 .foregroundColor(.secondary)
                 .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
+
+                if !state.isPlaying {
+                    Button(action: { stateManager.dismissCurrentTrack() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 14, height: 14, alignment: .center)
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .foregroundColor(.secondary)
+                    .help("Dismiss from menu bar")
+                }
             }
             .padding(.bottom, 12)
 
@@ -322,10 +381,6 @@ struct NowPlayingCard: View {
                 timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
                     .autoconnect()
                     .sink { _ in
-                        // Reconcile isPlaying with actual state
-                        if let currentState = stateManager.currentState {
-                            isPlaying = currentState.isPlaying
-                        }
                         // Keep muted state in sync if external change
                         syncVolumeState()
                         if isPlaying && currentPosition < duration {
@@ -333,6 +388,11 @@ struct NowPlayingCard: View {
                         }
                         loadPlaybackInfo()
                     }
+            }
+            .onChange(of: state.isPlaying) { newValue in
+                // Only adopt external state changes; avoids reverting our
+                // optimistic toggle while stateManager hasn't repolled yet.
+                isPlaying = newValue
             }
         .onDisappear {
             timerCancellable?.cancel()
@@ -353,8 +413,10 @@ struct NowPlayingCard: View {
     }
 
     private func openTrackLink() {
-        guard canOpenTrack, let uri = AppleScriptHelper.currentSpotifyTrackURI() else { return }
-        AppleScriptHelper.openSpotifyURI(uri)
+        guard canOpenTrack, let app = state.app else { return }
+        // Spotify is already on the current track — just bring it to the front.
+        // (Opening a spotify:track: URI would auto-play, which we don't want.)
+        AppleScriptHelper.activateApp(app)
     }
 
     private func openAlbumLink() {

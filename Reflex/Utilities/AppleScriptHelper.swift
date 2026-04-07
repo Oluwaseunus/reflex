@@ -172,6 +172,8 @@ final class AppleScriptHelper {
     private static func spotifyAction(for command: MediaCommand) -> String {
         switch command {
         case .playPause: return "playpause"
+        case .play: return "play"
+        case .pause: return "pause"
         case .nextTrack: return "next track"
         case .previousTrack: return "previous track"
         case .volumeUp: return "set sound volume to (sound volume + 10)"
@@ -183,6 +185,8 @@ final class AppleScriptHelper {
     private static func musicAction(for command: MediaCommand) -> String {
         switch command {
         case .playPause: return "playpause"
+        case .play: return "play"
+        case .pause: return "pause"
         case .nextTrack: return "next track"
         case .previousTrack: return "previous track"
         case .volumeUp: return "set sound volume to (sound volume + 10)"
@@ -194,6 +198,8 @@ final class AppleScriptHelper {
     private static func vlcAction(for command: MediaCommand) -> String {
         switch command {
         case .playPause: return "play"
+        case .play: return "play"
+        case .pause: return "play"  // VLC's "play" toggles; no dedicated pause command
         case .nextTrack: return "next"
         case .previousTrack: return "previous"
         case .volumeUp: return "volumeUp"
@@ -205,6 +211,8 @@ final class AppleScriptHelper {
     private static func genericAction(for command: MediaCommand) -> String {
         switch command {
         case .playPause: return "playpause"
+        case .play: return "play"
+        case .pause: return "pause"
         case .nextTrack: return "next track"
         case .previousTrack: return "previous track"
         case .volumeUp: return "set sound volume to (sound volume + 10)"

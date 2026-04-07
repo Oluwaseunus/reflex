@@ -21,6 +21,40 @@ final class SmartRouter: ObservableObject {
     private var pollingTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
+    // MARK: - Thread-safe cached state (read from CGEvent tap thread)
+
+    private var _spotifyIsPlaying = false
+    private var _spotifyPlayingLock = os_unfair_lock()
+
+    /// Thread-safe: is Spotify currently playing?
+    var isSpotifyPlaying: Bool {
+        os_unfair_lock_lock(&_spotifyPlayingLock)
+        defer { os_unfair_lock_unlock(&_spotifyPlayingLock) }
+        return _spotifyIsPlaying
+    }
+
+    private func setSpotifyPlaying(_ playing: Bool) {
+        os_unfair_lock_lock(&_spotifyPlayingLock)
+        _spotifyIsPlaying = playing
+        os_unfair_lock_unlock(&_spotifyPlayingLock)
+    }
+
+    private var _spotifyIsRunning = false
+    private var _spotifyRunningLock = os_unfair_lock()
+
+    /// Thread-safe: is Spotify currently running?
+    var isSpotifyRunning: Bool {
+        os_unfair_lock_lock(&_spotifyRunningLock)
+        defer { os_unfair_lock_unlock(&_spotifyRunningLock) }
+        return _spotifyIsRunning
+    }
+
+    private func setSpotifyRunning(_ running: Bool) {
+        os_unfair_lock_lock(&_spotifyRunningLock)
+        _spotifyIsRunning = running
+        os_unfair_lock_unlock(&_spotifyRunningLock)
+    }
+
     init(appDetector: MediaAppDetector,
          commandSender: MediaCommandSender,
          preferences: PreferencesManager,
@@ -143,6 +177,9 @@ final class SmartRouter: ObservableObject {
         if let spotify = appDetector.app(withBundleId: spotifyBundleId),
            spotify.isRunning,
            AppleScriptHelper.checkIfAppIsPlaying(spotify) {
+            setSpotifyRunning(true)
+            setSpotifyPlaying(true)
+
             let trackInfo: (track: String?, artist: String?, album: String?)
             if spotify.supportsNowPlaying {
                 trackInfo = AppleScriptHelper.getCurrentTrack(from: spotify)
@@ -154,8 +191,11 @@ final class SmartRouter: ObservableObject {
                 lastSpotifyVolume = currentVol
             }
 
+            // A playing track always clears the dismissed state
+            stateManager.dismissedTrackKey = nil
+
             // Compare against previous state *before* updating currentState.
-            let previousKey = "\(stateManager.currentState?.trackName ?? "")||\(stateManager.currentState?.artistName ?? "")"
+            let previousKey = stateManager.currentState?.trackKey ?? "||"
             let currentKey = "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
             let trackChanged = previousKey != currentKey
 
@@ -186,8 +226,20 @@ final class SmartRouter: ObservableObject {
                 }
             }
         } else {
-            // Preserve last known track so user can resume from the menu bar
+            // Update thread-safe caches: Spotify is not actively playing
+            if let spotify = appDetector.app(withBundleId: spotifyBundleId) {
+                setSpotifyRunning(spotify.isRunning)
+            } else {
+                setSpotifyRunning(false)
+            }
+            setSpotifyPlaying(false)
+
+            // Preserve last known track so user can resume from the menu bar,
+            // but skip if the user dismissed this track
             if let current = stateManager.currentState {
+                if stateManager.dismissedTrackKey == current.trackKey {
+                    return
+                }
                 let pausedState = PlaybackState(
                     app: current.app,
                     isPlaying: false,
@@ -203,6 +255,62 @@ final class SmartRouter: ObservableObject {
 
     deinit {
         stopPolling()
+    }
+
+    // MARK: - Play/Pause Decision (thread-safe, for CGEvent tap)
+
+    /// Represents the routing decision for a play/pause key press.
+    enum PlayPauseDecision {
+        /// Send .pause to Spotify (browser is also playing)
+        case pauseSpotify
+        /// Send .playPause toggle to Spotify (only Spotify is playing)
+        case toggleSpotify
+        /// Don't handle — let the key pass through to the system
+        case passThrough
+    }
+
+    /// Determine what to do when play/pause is pressed.
+    /// Thread-safe: reads only from atomic caches. Safe to call from CGEvent tap thread.
+    func decidePlayPause(browserIsNowPlaying: Bool) -> PlayPauseDecision {
+        guard isSpotifyRunning, isSpotifyPlaying else {
+            return .passThrough
+        }
+
+        if browserIsNowPlaying {
+            return .pauseSpotify
+        } else {
+            return .toggleSpotify
+        }
+    }
+
+    /// Execute a play/pause decision. Must be called from the main thread.
+    @discardableResult
+    func executePlayPauseDecision(_ decision: PlayPauseDecision) -> Bool {
+        guard let spotify = appDetector.app(withBundleId: spotifyBundleId) else { return false }
+
+        switch decision {
+        case .pauseSpotify:
+            Logger.shared.routing("Browser also playing — sending explicit pause to Spotify")
+            let success = commandSender.sendCommand(.pause, to: spotify)
+            if success {
+                preferences.setLastUsedApp(spotify.id)
+                activeApp = spotify
+            }
+            return success
+
+        case .toggleSpotify:
+            Logger.shared.routing("Only Spotify playing — sending playPause to Spotify")
+            let success = commandSender.sendCommand(.playPause, to: spotify)
+            if success {
+                preferences.setLastUsedApp(spotify.id)
+                activeApp = spotify
+            }
+            return success
+
+        case .passThrough:
+            Logger.shared.routing("Spotify not playing — key passed through to system")
+            return false
+        }
     }
 
     // MARK: - Volume Helpers (Spotify)

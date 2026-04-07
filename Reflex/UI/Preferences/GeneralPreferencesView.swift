@@ -43,6 +43,16 @@ struct GeneralPreferencesView: View {
                        isOn: $preferences.prefs.showArtistInMenuBar)
                     .disabled(!preferences.prefs.showNowPlaying || !preferences.prefs.showTrackInfo)
                     .help("Show \"song - artist\" in the menu bar when available")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Update menu bar while popover is open",
+                           isOn: $preferences.prefs.updateMenuBarWhilePopoverOpen)
+                        .disabled(!preferences.prefs.showNowPlaying || !preferences.prefs.showTrackInfo)
+                        .help("Allow the menu bar title to change while the popover is visible")
+                    Text("Enabling this may cause the popover to shift position when switching tracks.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             } header: {
                 Text("Display")
             }

@@ -7,9 +7,9 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var eventMonitor: Any?
-    private var popoverAnchorRect: NSRect?
     private var previousApp: NSRunningApplication?
     private var closedViaStatusBar: Bool = false
+    private var popoverIsOpen: Bool = false
 
     /// Current app being displayed
     @Published var currentApp: MediaApp?
@@ -68,6 +68,8 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         // Support both left and right click
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
+        updateDisplay(state: stateManager?.currentState)
+
         Logger.shared.info("Status bar item created")
     }
 
@@ -97,19 +99,22 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
-        // Observe permission changes
         AccessibilityManager.shared.$hasPermission
             .receive(on: DispatchQueue.main)
             .sink { [weak self] hasPermission in
-                self?.showPermissionWarning = !hasPermission
+                self?.setPermissionWarningVisible(!hasPermission)
             }
             .store(in: &cancellables)
+
     }
 
     /// Update the status bar display based on current state
     private func updateDisplay(state: PlaybackState?) {
         guard let button = statusItem?.button,
               let prefs = preferences?.prefs else { return }
+        guard !popoverIsOpen || prefs.updateMenuBarWhilePopoverOpen else {
+            return
+        }
 
         if let state = state, prefs.showNowPlaying {
             // Show now playing info
@@ -141,11 +146,11 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         } else {
             // Reset to default
             button.title = ""
-            if let image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "Reflex") {
-                image.isTemplate = true
-                button.image = image
-            }
             currentTrack = nil
+        }
+
+        if !popoverIsOpen {
+            updateStatusIcon(for: state, button: button)
         }
     }
 
@@ -194,16 +199,12 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             popover?.contentViewController = hostingController
         }
 
-        // Lock anchor while popover is open
-        if popoverAnchorRect == nil || popover?.isShown == false {
-            let bounds = button.bounds
-            popoverAnchorRect = NSRect(x: bounds.midX, y: bounds.minY, width: 1, height: bounds.height)
-        }
+        popoverIsOpen = true
 
         // Store the currently focused app before we steal focus
         previousApp = NSWorkspace.shared.frontmostApplication
 
-        popover?.show(relativeTo: popoverAnchorRect ?? button.bounds, of: button, preferredEdge: .minY)
+        popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
         // Activate the app and make the popover window key so gestures work immediately
         NSApp.activate(ignoringOtherApps: true)
@@ -270,7 +271,9 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         stopEventMonitor()
-        popoverAnchorRect = nil
+        popoverIsOpen = false
+        // Apply the latest state now that the popover is closed
+        updateDisplay(state: stateManager?.currentState)
         if closedViaStatusBar, preferences?.prefs.restoreFocusOnClose == true,
            let app = previousApp, !app.isTerminated {
             app.activate()
@@ -335,13 +338,43 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
     /// Show a warning indicator that permission is needed
     func showPermissionWarningIndicator() {
-        guard let button = statusItem?.button else { return }
+        setPermissionWarningVisible(true)
+    }
 
-        if let image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Permission Required") {
+    func hidePermissionWarningIndicator() {
+        setPermissionWarningVisible(false)
+    }
+
+    func setPermissionWarningVisible(_ visible: Bool) {
+        guard showPermissionWarning != visible else { return }
+        showPermissionWarning = visible
+        if !popoverIsOpen {
+            updateDisplay(state: stateManager?.currentState)
+        }
+    }
+
+    private func updateStatusIcon(for state: PlaybackState?, button: NSStatusBarButton) {
+        let imageName: String
+        let description: String
+
+        if showPermissionWarning {
+            imageName = "exclamationmark.triangle.fill"
+            description = "Accessibility Permission Required"
+            button.toolTip = "Accessibility permission is required to capture media keys"
+        } else if let iconName = state?.app?.icon {
+            imageName = iconName
+            description = state?.app?.name ?? "Reflex"
+            button.toolTip = nil
+        } else {
+            imageName = "music.note"
+            description = "Reflex"
+            button.toolTip = nil
+        }
+
+        if let image = NSImage(systemSymbolName: imageName, accessibilityDescription: description) {
             image.isTemplate = true
             button.image = image
         }
-        showPermissionWarning = true
     }
 }
 

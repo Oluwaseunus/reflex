@@ -9,18 +9,30 @@ final class MediaKeyListener {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    /// Callback when a media key is pressed
-    /// Return true to consume the event, false to let it pass through
-    var onMediaKeyPressed: ((MediaCommand) -> Bool)?
+    /// Synchronous callback to decide whether to swallow a media key event.
+    /// Called on the CGEvent tap thread. Must be fast and thread-safe (no AppleScript).
+    /// Return true to consume (swallow), false to pass through to the system.
+    var shouldConsumeMediaKey: ((MediaCommand) -> Bool)?
+
+    /// Async callback to execute the action after the swallow decision is made.
+    /// Called on the main thread.
+    var onMediaKeyPressed: ((MediaCommand) -> Void)?
 
     /// Whether the listener is currently active
     private(set) var isListening: Bool = false
 
+    /// Tracks key codes whose key-down was consumed, so we also swallow their key-up
+    var consumedKeys: Set<Int> = []
+
+    /// Timestamp of last play/pause to debounce held-key repeats
+    var lastPlayPauseTime: TimeInterval = 0
+
     /// Start listening for media key events
-    func startListening() {
+    @discardableResult
+    func startListening() -> Bool {
         guard !isListening else {
             Logger.shared.warning("MediaKeyListener already listening")
-            return
+            return true
         }
 
         // Don't check AccessibilityManager.hasPermission - just try to create the tap
@@ -43,7 +55,7 @@ final class MediaKeyListener {
             userInfo: refcon
         ) else {
             Logger.shared.error("Failed to create CGEvent tap. Check Accessibility permissions.")
-            return
+            return false
         }
 
         eventTap = tap
@@ -51,7 +63,7 @@ final class MediaKeyListener {
 
         guard let source = runLoopSource else {
             Logger.shared.error("Failed to create run loop source")
-            return
+            return false
         }
 
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
@@ -59,6 +71,7 @@ final class MediaKeyListener {
 
         isListening = true
         Logger.shared.info("Media key listener started")
+        return true
     }
 
     /// Stop listening for media key events
@@ -110,7 +123,7 @@ private func mediaKeyEventCallback(
 
     // Handle tap disabled event
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        Logger.shared.warning("Event tap disabled, attempting to re-enable")
+        Logger.shared.warning("Event tap disabled (type: \(type.rawValue)), attempting to re-enable")
         DispatchQueue.main.async {
             listener.reEnableTapIfNeeded()
         }
@@ -123,10 +136,8 @@ private func mediaKeyEventCallback(
     }
 
     // Check if this is a media key event (subtype 8)
-    // NSEvent.EventSubtype.screenChanged has raw value 8, same as media keys
     let nsEvent = NSEvent(cgEvent: event)
     guard let subtype = nsEvent?.subtype, subtype.rawValue == 8 else {
-        // Not a media key event, pass through
         return Unmanaged.passRetained(event)
     }
 
@@ -134,61 +145,68 @@ private func mediaKeyEventCallback(
     return parseMediaKeyEvent(event: event, listener: listener)
 }
 
-/// Parse media key event from CGEvent data
-/// SIMPLE LOGIC: Always capture media keys and route to the target media app
+/// Parse media key event from CGEvent data.
+/// Conditionally swallows media key events based on the shouldConsumeMediaKey callback,
+/// and dispatches the action asynchronously on the main thread.
 private func parseMediaKeyEvent(event: CGEvent, listener: MediaKeyListener) -> Unmanaged<CGEvent>? {
-    // Get the raw event data
-    // For system-defined events, the key info is stored in data1
-    // CGEventField 38 corresponds to kCGEventData1
     let data1 = event.getIntegerValueField(CGEventField(rawValue: 38)!)
-
-    // Extract key code and flags from data1
-    // Format: ((keyCode << 16) | (keyFlags << 8))
     let keyCode = Int((data1 & 0xFFFF0000) >> 16)
     let keyFlags = Int((data1 & 0x0000FF00) >> 8)
 
-    // Check if this is a key down event
-    let keyDown = (keyFlags & 0x0A) == 0x0A
-
-    // Pass through key-up events
-    guard keyDown else {
-        return Unmanaged.passRetained(event)
-    }
-
-    // Map key code to MediaCommand
-    let command: MediaCommand?
+    // Map to a command, or pass through if not a media key we handle
+    let command: MediaCommand
     switch keyCode {
-    case Constants.MediaKeyCodes.play:
-        command = .playPause
-    case Constants.MediaKeyCodes.next:
-        command = .nextTrack
-    case Constants.MediaKeyCodes.previous:
-        command = .previousTrack
+    case Constants.MediaKeyCodes.play: command = .playPause
+    case Constants.MediaKeyCodes.next: command = .nextTrack
+    case Constants.MediaKeyCodes.previous: command = .previousTrack
     default:
-        command = nil
-    }
-
-    // Not a media key we handle, pass through
-    guard let command = command else {
         return Unmanaged.passRetained(event)
     }
 
-    // ALWAYS capture and route to our target media app
-    Logger.shared.event("Media key captured: \(command.displayName)")
+    // Detect key-down vs key-up
+    let isKeyDown = (keyFlags & 0x08) != 0 && (keyFlags & 0x01) == 0
+    let isKeyUp = (keyFlags & 0x08) != 0 && (keyFlags & 0x01) != 0
 
-    // Ask the router whether to consume this key
-    var shouldConsume = false
-    if let handler = listener.onMediaKeyPressed {
-        // Ensure routing happens on the main thread to avoid reentrancy issues with NSAppleScript
-        if Thread.isMainThread {
-            shouldConsume = handler(command)
-        } else {
-            DispatchQueue.main.sync {
-                shouldConsume = handler(command)
+    if isKeyDown {
+        // Debounce play/pause to prevent rapid toggling from held-key repeats
+        if command == .playPause {
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - listener.lastPlayPauseTime < 0.4 {
+                return nil // swallow debounced repeat
             }
+            listener.lastPlayPauseTime = now
+        }
+
+        // Ask whether to consume this key (synchronous, thread-safe)
+        let shouldConsume = listener.shouldConsumeMediaKey?(command) ?? true
+
+        if shouldConsume {
+            // Track that we consumed this key-down so we also swallow its key-up
+            listener.consumedKeys.insert(keyCode)
+
+            Logger.shared.event("Media key captured: \(command.displayName)")
+
+            // Fire the action asynchronously on the main thread
+            DispatchQueue.main.async {
+                listener.onMediaKeyPressed?(command)
+            }
+
+            return nil // swallow
+        } else {
+            Logger.shared.event("Media key passed through: \(command.displayName)")
+            return Unmanaged.passRetained(event) // pass through to system
         }
     }
 
-    // Consume only when handler says so; otherwise let the system/browser receive it
-    return shouldConsume ? nil : Unmanaged.passRetained(event)
+    if isKeyUp {
+        // If we consumed the matching key-down, also consume key-up
+        if listener.consumedKeys.remove(keyCode) != nil {
+            return nil // swallow key-up
+        } else {
+            return Unmanaged.passRetained(event) // pass through key-up
+        }
+    }
+
+    // Neither key-down nor key-up — pass through
+    return Unmanaged.passRetained(event)
 }

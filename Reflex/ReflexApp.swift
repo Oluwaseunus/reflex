@@ -29,7 +29,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var stateManager: PlaybackStateManager!
     private var smartRouter: SmartRouter!
     private var mediaKeyListener: MediaKeyListener!
+    private var nowPlayingManager: NowPlayingManager!
+    private var systemNowPlayingMonitor: SystemNowPlayingMonitor!
     private var statusBarManager: StatusBarManager!
+
+    /// Stores the play/pause decision between shouldConsumeMediaKey (tap thread)
+    /// and onMediaKeyPressed (main thread). Protected by a lock.
+    private var _lastDecisionLock = os_unfair_lock()
+    private var _lastPlayPauseDecision: SmartRouter.PlayPauseDecision = .passThrough
+
+    private func setLastPlayPauseDecision(_ decision: SmartRouter.PlayPauseDecision) {
+        os_unfair_lock_lock(&_lastDecisionLock)
+        _lastPlayPauseDecision = decision
+        os_unfair_lock_unlock(&_lastDecisionLock)
+    }
+
+    private func getLastPlayPauseDecision() -> SmartRouter.PlayPauseDecision {
+        os_unfair_lock_lock(&_lastDecisionLock)
+        defer { os_unfair_lock_unlock(&_lastDecisionLock) }
+        return _lastPlayPauseDecision
+    }
 
     // MARK: - Windows
 
@@ -76,11 +95,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             if !self.mediaKeyListener.isListening {
                 self.logger.debug("Retrying to start media key listener...")
-                self.mediaKeyListener.startListening()
+                let started = self.mediaKeyListener.startListening()
+                self.statusBarManager.setPermissionWarningVisible(!started)
             } else {
                 // Successfully listening, stop retrying
                 self.retryTimer?.invalidate()
                 self.retryTimer = nil
+                self.statusBarManager.hidePermissionWarningIndicator()
                 self.logger.info("Media key listener is active, stopped retry timer")
             }
         }
@@ -89,7 +110,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         logger.info("Reflex shutting down...")
         mediaKeyListener?.stopListening()
+        nowPlayingManager?.unregister()
         smartRouter?.stopPolling()
+        systemNowPlayingMonitor?.stopMonitoring()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -115,12 +138,74 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             stateManager: stateManager
         )
 
-        // Create media key listener
+        // Create system now-playing monitor for browser detection
+        systemNowPlayingMonitor = SystemNowPlayingMonitor()
+        systemNowPlayingMonitor.startMonitoring(interval: 2.0)
+
+        // Create media key listener (CGEvent tap — belt-and-suspenders with NowPlayingManager)
         mediaKeyListener = MediaKeyListener()
-        mediaKeyListener.onMediaKeyPressed = { [weak self] command in
-            // Only intercept when a registered media app is actively playing
-            self?.smartRouter.routeCommand(command, requirePlaying: true) ?? false
+
+        // Synchronous decision callback — runs on CGEvent tap thread.
+        // Only reads thread-safe cached state, no AppleScript.
+        mediaKeyListener.shouldConsumeMediaKey = { [weak self] command in
+            guard let self = self else { return true }
+
+            switch command {
+            case .playPause:
+                let decision = self.smartRouter.decidePlayPause(
+                    browserIsNowPlaying: self.systemNowPlayingMonitor.isBrowserNowPlaying
+                )
+                self.setLastPlayPauseDecision(decision)
+                return decision != .passThrough
+
+            case .nextTrack, .previousTrack:
+                // For skip commands, consume only if Spotify is playing
+                return self.smartRouter.isSpotifyPlaying
+
+            default:
+                return true
+            }
         }
+
+        // Async action callback — runs on main thread after the swallow decision.
+        mediaKeyListener.onMediaKeyPressed = { [weak self] command in
+            guard let self = self else { return }
+
+            switch command {
+            case .playPause:
+                self.smartRouter.executePlayPauseDecision(self.getLastPlayPauseDecision())
+
+            case .nextTrack, .previousTrack:
+                self.smartRouter.routeCommand(command, requirePlaying: true)
+
+            default:
+                self.smartRouter.routeCommand(command, requirePlaying: false)
+            }
+        }
+
+        // Register as the system Now Playing client so mediaremoted sends
+        // media key commands to Reflex instead of browsers.
+        nowPlayingManager = NowPlayingManager()
+        nowPlayingManager.onRemoteCommand = { [weak self] command in
+            // Only require an actively-playing app for next/previous track.
+            // play, pause, and playPause should always reach the target app.
+            let requirePlaying = command == .nextTrack || command == .previousTrack
+            self?.smartRouter.routeCommand(command, requirePlaying: requirePlaying)
+        }
+        nowPlayingManager.register()
+
+        // Keep Now Playing info in sync with playback state
+        stateManager.$currentState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.nowPlayingManager.updateNowPlaying(
+                    playing: state?.isPlaying ?? false,
+                    track: state?.trackName,
+                    artist: state?.artistName,
+                    album: state?.albumName
+                )
+            }
+            .store(in: &cancellables)
 
         // Create status bar manager
         statusBarManager = StatusBarManager()
@@ -156,8 +241,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // Try to start listening if not already
                     if !self.mediaKeyListener.isListening {
                         self.logger.info("Permission granted, starting media key listener...")
-                        self.mediaKeyListener.startListening()
-                        if self.preferencesManager.prefs.autoSwitchEnabled {
+                        let started = self.mediaKeyListener.startListening()
+                        self.statusBarManager.setPermissionWarningVisible(!started)
+                        if started && self.preferencesManager.prefs.autoSwitchEnabled {
                             self.smartRouter.startPolling()
                         }
                     }
@@ -171,14 +257,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Media Key Listening
 
     private func startMediaKeyListening() {
-        // Check permission first
-        guard accessibilityManager.checkPermission() else {
-            logger.warning("Cannot start media key listening - no permission")
-            statusBarManager.showPermissionWarningIndicator()
-            return
+        if !accessibilityManager.checkPermission() {
+            logger.warning("Accessibility not currently trusted; attempting media key listener startup anyway")
         }
 
-        mediaKeyListener.startListening()
+        let started = mediaKeyListener.startListening()
+        statusBarManager.setPermissionWarningVisible(!started)
+        guard started else { return }
 
         // Start playback state polling if auto-switch is enabled
         if preferencesManager.prefs.autoSwitchEnabled {

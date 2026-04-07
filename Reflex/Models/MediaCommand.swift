@@ -3,6 +3,8 @@ import Foundation
 /// Represents media control commands that can be sent to apps
 enum MediaCommand: String, CaseIterable {
     case playPause
+    case play
+    case pause
     case nextTrack
     case previousTrack
     case volumeUp
@@ -12,7 +14,7 @@ enum MediaCommand: String, CaseIterable {
     /// NX_KEYTYPE values for system media keys
     var keyCode: Int {
         switch self {
-        case .playPause: return 16
+        case .playPause, .play, .pause: return 16
         case .nextTrack: return 17
         case .previousTrack: return 18
         case .volumeUp: return 0
@@ -25,6 +27,8 @@ enum MediaCommand: String, CaseIterable {
     var appleScriptCommand: String {
         switch self {
         case .playPause: return "playpause"
+        case .play: return "play"
+        case .pause: return "pause"
         case .nextTrack: return "next track"
         case .previousTrack: return "previous track"
         case .volumeUp: return "set sound volume to (sound volume + 10)"
@@ -37,6 +41,8 @@ enum MediaCommand: String, CaseIterable {
     var displayName: String {
         switch self {
         case .playPause: return "Play/Pause"
+        case .play: return "Play"
+        case .pause: return "Pause"
         case .nextTrack: return "Next Track"
         case .previousTrack: return "Previous Track"
         case .volumeUp: return "Volume Up"
@@ -49,6 +55,8 @@ enum MediaCommand: String, CaseIterable {
     var symbolName: String {
         switch self {
         case .playPause: return "playpause.fill"
+        case .play: return "play.fill"
+        case .pause: return "pause.fill"
         case .nextTrack: return "forward.fill"
         case .previousTrack: return "backward.fill"
         case .volumeUp: return "speaker.wave.3.fill"

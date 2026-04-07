@@ -6,7 +6,8 @@ struct AppPreferences: Codable {
         case favoriteApps, lastUsedApp, autoSwitchEnabled, showNowPlaying, showTrackInfo,
              showArtistInMenuBar, launchAtLogin, enableVolumeKeys, fallbackToSystem,
              pollingInterval, showVisualFeedback, playAudioFeedback, customShortcuts,
-             hasCompletedOnboarding, preferencesVersion, restoreFocusOnClose
+             hasCompletedOnboarding, preferencesVersion, restoreFocusOnClose,
+             updateMenuBarWhilePopoverOpen
     }
 
     /// Bundle IDs of user's favorite media apps
@@ -51,6 +52,9 @@ struct AppPreferences: Codable {
     /// Return focus to previous app when closing popover from menu bar
     var restoreFocusOnClose: Bool = true
 
+    /// Allow menu bar title to update while the popover is open
+    var updateMenuBarWhilePopoverOpen: Bool = false
+
     /// App has been run before
     var hasCompletedOnboarding: Bool = false
 
@@ -78,6 +82,7 @@ struct AppPreferences: Codable {
         playAudioFeedback = try container.decodeIfPresent(Bool.self, forKey: .playAudioFeedback) ?? false
         customShortcuts = try container.decodeIfPresent([String: String].self, forKey: .customShortcuts) ?? [:]
         restoreFocusOnClose = try container.decodeIfPresent(Bool.self, forKey: .restoreFocusOnClose) ?? true
+        updateMenuBarWhilePopoverOpen = try container.decodeIfPresent(Bool.self, forKey: .updateMenuBarWhilePopoverOpen) ?? false
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
         preferencesVersion = try container.decodeIfPresent(Int.self, forKey: .preferencesVersion) ?? 1
     }
