@@ -172,8 +172,8 @@ final class SmartRouter: ObservableObject {
         Logger.shared.info("Stopped playback state polling")
     }
 
-    /// Poll for current playback state and update routing/display accordingly (Spotify-only)
-    private func pollPlaybackState() {
+    /// Refresh Spotify playback state and update routing/display accordingly (Spotify-only)
+    private func refreshSpotifyPlaybackState(reason: String) {
         if let spotify = appDetector.app(withBundleId: spotifyBundleId),
            spotify.isRunning,
            AppleScriptHelper.checkIfAppIsPlaying(spotify) {
@@ -251,6 +251,11 @@ final class SmartRouter: ObservableObject {
                 stateManager.updateState(pausedState)
             }
         }
+    }
+
+    /// Poll for current playback state and update routing/display accordingly (Spotify-only)
+    private func pollPlaybackState() {
+        refreshSpotifyPlaybackState(reason: "timer")
     }
 
     deinit {
