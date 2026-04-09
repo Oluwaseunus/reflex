@@ -148,6 +148,116 @@ final class SmartRouter: ObservableObject {
 
     // Quick switch removed; no multi-app tie-breakers needed
 
+    /// Restart the currently loaded Spotify track by seeking to position 0,
+    /// preserving play/pause state. Currently **not wired up** — retained for
+    /// a potential future reintroduction of the media-key "previous-while-
+    /// paused" flow (see PREV_WHILE_PAUSED_PLAN.md).
+    @available(*, deprecated, message: "Not currently in use. Popover ⏮ button uses replayCurrentSpotifyTrack(resumePlayback:) instead.")
+    @discardableResult
+    func restartCurrentSpotifyTrack() -> Bool {
+        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
+              spotify.isInstalled else {
+            Logger.shared.routing("Restart-current-track: Spotify not installed")
+            return false
+        }
+        guard spotify.isRunning else {
+            Logger.shared.routing("Restart-current-track: Spotify not running")
+            return false
+        }
+
+        Logger.shared.routing("Restart-current-track: seeking Spotify to 0")
+        let success = AppleScriptHelper.setPlaybackPosition(0, for: spotify)
+
+        if success {
+            preferences.setLastUsedApp(spotify.id)
+            activeApp = spotify
+
+            NotificationCenter.default.post(
+                name: Constants.Notifications.activeAppChanged,
+                object: spotify
+            )
+        }
+
+        return success
+    }
+
+    /// Skip to the previous Spotify track and immediately start playback,
+    /// fused into a single AppleScript `tell` block. Used by the popover
+    /// ⏮ button when the track is paused and the position is within the
+    /// restart-threshold window (see `NowPlayingCard.restartThresholdSeconds`),
+    /// so the behavior matches Spotify's own paused ⏮ click (which auto-plays
+    /// the previous track).
+    /// - Returns: `true` if the command was issued, `false` otherwise.
+    @discardableResult
+    func skipToPreviousSpotifyTrackAndPlay() -> Bool {
+        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
+              spotify.isInstalled else {
+            Logger.shared.routing("Skip-to-previous-and-play: Spotify not installed")
+            return false
+        }
+        guard spotify.isRunning else {
+            Logger.shared.routing("Skip-to-previous-and-play: Spotify not running")
+            return false
+        }
+
+        Logger.shared.routing("Skip-to-previous-and-play: previous track + play")
+        let success = AppleScriptHelper.previousTrackAndPlaySpotify(for: spotify)
+
+        if success {
+            preferences.setLastUsedApp(spotify.id)
+            activeApp = spotify
+
+            NotificationCenter.default.post(
+                name: Constants.Notifications.activeAppChanged,
+                object: spotify
+            )
+        }
+
+        return success
+    }
+
+    /// Replay the currently loaded Spotify track.
+    /// - When `resumePlayback` is `true`, seek to 0 **and** start playback,
+    ///   fused into a single AppleScript `tell` block to avoid a race with
+    ///   any intervening playback-context change.
+    /// - When `false`, seek to 0 only, leaving Spotify's play state alone
+    ///   (used when Spotify is already playing and we just want the scrubber
+    ///   to jump back).
+    /// - Returns: `true` if the command was issued, `false` otherwise.
+    @discardableResult
+    func replayCurrentSpotifyTrack(resumePlayback: Bool) -> Bool {
+        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
+              spotify.isInstalled else {
+            Logger.shared.routing("Replay-current-track: Spotify not installed")
+            return false
+        }
+        guard spotify.isRunning else {
+            Logger.shared.routing("Replay-current-track: Spotify not running")
+            return false
+        }
+
+        let success: Bool
+        if resumePlayback {
+            Logger.shared.routing("Replay-current-track: seeking Spotify to 0 and playing")
+            success = AppleScriptHelper.restartAndPlaySpotify(for: spotify)
+        } else {
+            Logger.shared.routing("Replay-current-track: seeking Spotify to 0")
+            success = AppleScriptHelper.setPlaybackPosition(0, for: spotify)
+        }
+
+        if success {
+            preferences.setLastUsedApp(spotify.id)
+            activeApp = spotify
+
+            NotificationCenter.default.post(
+                name: Constants.Notifications.activeAppChanged,
+                object: spotify
+            )
+        }
+
+        return success
+    }
+
     /// Start polling for playback state
     func startPolling() {
         guard !isPolling else { return }

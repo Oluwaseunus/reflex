@@ -140,6 +140,12 @@ struct StatusBarView: View {
 
 /// Modern Now Playing card with album art, controls, and progress
 struct NowPlayingCard: View {
+    /// When the ⏮ button is clicked, positions strictly less than this
+    /// threshold (in seconds) go to the previous track; positions at or
+    /// above it restart the current track. Matches Spotify's native UI
+    /// behavior for the ⏮ button.
+    private static let restartThresholdSeconds: Double = 3.0
+
     let state: PlaybackState
     let router: SmartRouter
     let stateManager: PlaybackStateManager
@@ -266,7 +272,7 @@ struct NowPlayingCard: View {
                     HStack(spacing: 0) {
                         Spacer(minLength: 4)
 
-                        Button(action: { sendCommand(.previousTrack) }) {
+                        Button(action: replayCurrentTrack) {
                             Image(systemName: "backward.fill")
                                 .font(.system(size: 20))
                                 .foregroundColor(.primary)
@@ -447,6 +453,41 @@ struct NowPlayingCard: View {
             isPlaying.toggle()
         }
         router.routeCommand(command)
+    }
+
+    /// Popover ⏮ button action, matching Spotify's native ⏮ behavior with
+    /// one deliberate extension: clicks while paused always resume playback.
+    ///
+    /// - Position ≥ restartThresholdSeconds → seek to 0 on the current track.
+    ///   Playing: stays playing. Paused: also resumes (fused seek+play in one
+    ///   AppleScript `tell` block).
+    /// - Position <  restartThresholdSeconds → go to the previous track.
+    ///   Playing: standard `previous track` via the normal routing path.
+    ///   Paused: `previous track` + `play` fused in one `tell` block, so the
+    ///   previous track auto-plays (matching Spotify's own paused-⏮ UX).
+    private func replayCurrentTrack() {
+        let wasPaused = !isPlaying
+        let goToPrevious = currentPosition < Self.restartThresholdSeconds
+
+        if wasPaused {
+            // Optimistic UI update so the icon flips to "pause" immediately.
+            // The state manager will repoll and reconcile shortly.
+            isPlaying = true
+        }
+
+        if goToPrevious {
+            if wasPaused {
+                router.skipToPreviousSpotifyTrackAndPlay()
+            } else {
+                router.routeCommand(.previousTrack)
+            }
+            // currentPosition will be refreshed from Spotify by loadPlaybackInfo
+            // on the next timer tick; no optimistic reset here because the
+            // track is changing and duration is about to change too.
+        } else {
+            currentPosition = 0
+            router.replayCurrentSpotifyTrack(resumePlayback: wasPaused)
+        }
     }
 
     private func toggleMute() {
