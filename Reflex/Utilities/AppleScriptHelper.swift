@@ -350,6 +350,42 @@ final class AppleScriptHelper {
         }
     }
 
+    /// Seek the current Spotify track to 0 and start playback, in a single
+    /// AppleScript `tell` block so the two statements share one AppleEvent
+    /// round-trip and cannot race against a playback-context change. Only
+    /// supports Spotify — Music uses a different idiom.
+    @discardableResult
+    static func restartAndPlaySpotify(for app: MediaApp) -> Bool {
+        guard app.bundleIdentifier == "com.spotify.client" else { return false }
+        let script = """
+        tell application "Spotify"
+            if it is running then
+                set player position to 0
+                play
+            end if
+        end tell
+        """
+        return execute(script).success
+    }
+
+    /// Skip to the previous Spotify track and start playback, in a single
+    /// AppleScript `tell` block. Used for the popover ⏮ button's
+    /// paused + position<3s branch, where we want Spotify's native
+    /// paused-click-plays-previous-track behavior. Only supports Spotify.
+    @discardableResult
+    static func previousTrackAndPlaySpotify(for app: MediaApp) -> Bool {
+        guard app.bundleIdentifier == "com.spotify.client" else { return false }
+        let script = """
+        tell application "Spotify"
+            if it is running then
+                previous track
+                play
+            end if
+        end tell
+        """
+        return execute(script).success
+    }
+
     /// Set playback position in seconds
     @discardableResult
     static func setPlaybackPosition(_ position: Double, for app: MediaApp) -> Bool {
