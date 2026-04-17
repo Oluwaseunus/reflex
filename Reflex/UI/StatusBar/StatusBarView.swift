@@ -160,6 +160,15 @@ struct NowPlayingCard: View {
     @State private var isHoveringProgress: Bool = false
     @State private var isScrubbing: Bool = false
     @State private var scrubPosition: Double = 0
+    @State private var isHoveringVolume: Bool = false
+    @State private var isScrubbingVolume: Bool = false
+    @State private var scrubVolume: Double = 0
+    @State private var volumeHideWorkItem: DispatchWorkItem?
+    @State private var lastVolumeSendAt: Date = .distantPast
+    @State private var lastVolumeSent: Int = -1
+    @State private var lastPositionSendAt: Date = .distantPast
+
+    private let scrubThrottle: TimeInterval = 0.03
 
     var body: some View {
         VStack(spacing: 0) {
@@ -170,15 +179,26 @@ struct NowPlayingCard: View {
                     .foregroundColor(.secondary)
                     .tracking(1)
                 Spacer()
-                Button(action: toggleMute) {
-                    Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 14, height: 14, alignment: .center)
+                HStack(spacing: 10) {
+                    if isSpotify {
+                        volumeScrubber
+                            .frame(width: showVolumeScrubber ? 100 : 0)
+                            .opacity(showVolumeScrubber ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.15), value: showVolumeScrubber)
+                    }
+                    Button(action: toggleMute) {
+                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(width: 14, height: 14, alignment: .center)
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .foregroundColor(.secondary)
+                    .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .foregroundColor(.secondary)
-                .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
+                .onHover { hovering in
+                    scheduleVolumeVisibility(hovering)
+                }
 
                 if !state.isPlaying {
                     Button(action: { stateManager.dismissCurrentTrack() }) {
@@ -343,6 +363,11 @@ struct NowPlayingCard: View {
                                         isScrubbing = true
                                         let fraction = max(0, min(1, value.location.x / totalWidth))
                                         scrubPosition = Double(fraction) * duration
+                                        // Live seek is Spotify-only: non-Spotify apps go through
+                                        // AppleScript, which is too slow for per-frame writes.
+                                        if isSpotify {
+                                            sendPositionThrottled(scrubPosition)
+                                        }
                                     }
                                     .onEnded { value in
                                         guard duration > 0, let app = state.app else {
@@ -352,7 +377,11 @@ struct NowPlayingCard: View {
                                         let fraction = max(0, min(1, value.location.x / totalWidth))
                                         let seekTo = Double(fraction) * duration
                                         currentPosition = seekTo
-                                        AppleScriptHelper.setPlaybackPosition(seekTo, for: app)
+                                        if isSpotify {
+                                            SpotifyBridge.setPlaybackPosition(seekTo)
+                                        } else {
+                                            AppleScriptHelper.setPlaybackPosition(seekTo, for: app)
+                                        }
                                         isScrubbing = false
                                     }
                             )
@@ -509,17 +538,101 @@ struct NowPlayingCard: View {
 
     private func syncVolumeState() {
         guard let app = state.app else { return }
+        guard !isScrubbingVolume else { return }
         if let vol = AppleScriptHelper.getVolume(for: app) {
             isMuted = vol == 0
             if vol > 0 { currentVolume = vol }
         }
     }
 
+    private var showVolumeScrubber: Bool {
+        isSpotify && (isHoveringVolume || isScrubbingVolume)
+    }
+
+    private func sendVolumeThrottled(_ target: Int) {
+        guard target != lastVolumeSent else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastVolumeSendAt) >= scrubThrottle else { return }
+        lastVolumeSent = target
+        lastVolumeSendAt = now
+        currentVolume = target
+        isMuted = target == 0
+        SpotifyBridge.setVolume(target)
+    }
+
+    private func sendPositionThrottled(_ seconds: Double) {
+        let now = Date()
+        guard now.timeIntervalSince(lastPositionSendAt) >= scrubThrottle else { return }
+        lastPositionSendAt = now
+        currentPosition = seconds
+        SpotifyBridge.setPlaybackPosition(seconds)
+    }
+
+    private var isSpotify: Bool {
+        state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
+    private func scheduleVolumeVisibility(_ hovering: Bool) {
+        volumeHideWorkItem?.cancel()
+        volumeHideWorkItem = nil
+        if hovering {
+            isHoveringVolume = true
+        } else {
+            let work = DispatchWorkItem { isHoveringVolume = false }
+            volumeHideWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        }
+    }
+
+    private var volumeScrubber: some View {
+        GeometryReader { geo in
+            let totalWidth = geo.size.width
+            let displayVolume = isScrubbingVolume ? scrubVolume : Double(currentVolume)
+            let fillWidth = max(0, min(totalWidth, totalWidth * CGFloat(displayVolume / 100)))
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color(nsColor: .separatorColor))
+                    .frame(height: 3)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.primary)
+                    .frame(width: fillWidth, height: 3)
+                Circle()
+                    .fill(Color.primary)
+                    .frame(width: 10, height: 10)
+                    .offset(x: max(0, min(fillWidth - 5, totalWidth - 10)))
+            }
+            .frame(height: 10)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isScrubbingVolume = true
+                        let fraction = max(0, min(1, value.location.x / totalWidth))
+                        scrubVolume = Double(fraction) * 100
+                        sendVolumeThrottled(Int(scrubVolume.rounded()))
+                    }
+                    .onEnded { value in
+                        let fraction = max(0, min(1, value.location.x / totalWidth))
+                        let target = Int((Double(fraction) * 100).rounded())
+                        currentVolume = target
+                        isMuted = target == 0
+                        if target != lastVolumeSent {
+                            SpotifyBridge.setVolume(target)
+                            lastVolumeSent = target
+                            lastVolumeSendAt = Date()
+                        }
+                        isScrubbingVolume = false
+                    }
+            )
+        }
+        .frame(height: 10)
+    }
+
     private func loadPlaybackInfo() {
         guard let app = state.app else { return }
 
         // Always fetch position (lightweight local AppleScript)
-        if let position = AppleScriptHelper.getPlaybackPosition(from: app) {
+        if !isScrubbing, let position = AppleScriptHelper.getPlaybackPosition(from: app) {
             self.currentPosition = position
         }
 
