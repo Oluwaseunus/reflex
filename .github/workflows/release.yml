@@ -1,0 +1,86 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      APP_NAME: Reflex
+      BUNDLE_ID: com.reflex.app
+      LANDING_REPO: Oluwaseunus/reflex-landing-page
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build (release)
+        run: swift build --configuration release --arch arm64 --arch x86_64
+
+      - name: Assemble .app bundle
+        run: |
+          set -euo pipefail
+          BUILD_DIR=".build/apple/Products/Release"
+          if [ ! -f "$BUILD_DIR/$APP_NAME" ]; then
+            BUILD_DIR=".build/release"
+          fi
+          APP_BUNDLE="build/$APP_NAME.app"
+          rm -rf build && mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+          cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
+          if [ -d "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" ]; then
+            cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle/"* "$APP_BUNDLE/Contents/Resources/"
+          fi
+          VERSION="0.1.${{ github.run_number }}"
+          cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key><string>en</string>
+              <key>CFBundleExecutable</key><string>$APP_NAME</string>
+              <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+              <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+              <key>CFBundleName</key><string>$APP_NAME</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>CFBundleShortVersionString</key><string>$VERSION</string>
+              <key>CFBundleVersion</key><string>${{ github.run_number }}</string>
+              <key>LSUIElement</key><true/>
+              <key>LSMinimumSystemVersion</key><string>14.0</string>
+              <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+              <key>NSAppleEventsUsageDescription</key><string>Reflex needs to send AppleScript commands to control media playback in your music apps.</string>
+              <key>NSHumanReadableCopyright</key><string>Copyright © $(date +%Y).</string>
+              <key>NSHighResolutionCapable</key><true/>
+              <key>NSPrincipalClass</key><string>NSApplication</string>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --sign - "$APP_BUNDLE"
+
+      - name: Create DMG
+        run: |
+          set -euo pipefail
+          mkdir -p dist dmg-staging
+          cp -R "build/$APP_NAME.app" dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "$APP_NAME" -srcfolder dmg-staging -ov -format UDZO "dist/$APP_NAME.dmg"
+
+      - name: Publish release to landing page repo
+        env:
+          GH_TOKEN: ${{ secrets.LANDING_PAGE_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="v0.1.${{ github.run_number }}"
+          gh release create "$VERSION" "dist/$APP_NAME.dmg" \
+            --repo "$LANDING_REPO" \
+            --title "Reflex $VERSION" \
+            --notes "Automated build from ${{ github.repository }}@${{ github.sha }}" \
+            --latest
