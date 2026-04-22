@@ -5,6 +5,7 @@ import ServiceManagement
 struct GeneralPreferencesView: View {
     @EnvironmentObject var preferences: PreferencesManager
     @ObservedObject var accessibilityManager = AccessibilityManager.shared
+    @ObservedObject var spotifyAuth = SpotifyAuthManager.shared
 
     var body: some View {
         Form {
@@ -20,10 +21,6 @@ struct GeneralPreferencesView: View {
                 Toggle("Route volume keys through Reflex",
                        isOn: $preferences.prefs.enableVolumeKeys)
                     .help("Control volume of target app instead of system volume")
-
-                Toggle("Return focus to previous app when closing popover",
-                       isOn: $preferences.prefs.restoreFocusOnClose)
-                    .help("Restore focus to the app you were using when the popover is dismissed from the menu bar")
             } header: {
                 Text("Behavior")
             }
@@ -53,6 +50,18 @@ struct GeneralPreferencesView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                HStack {
+                    Text("Search highlight color")
+                    Spacer()
+                    Picker("", selection: $preferences.prefs.searchHighlightStyle) {
+                        Text("Accent").tag(SearchHighlightStyle.accent)
+                        Text("Neutral").tag(SearchHighlightStyle.neutral)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 120)
+                }
+                .help("Color used to highlight the selected row in the Spotify search popup")
             } header: {
                 Text("Display")
             }
@@ -92,6 +101,40 @@ struct GeneralPreferencesView: View {
                 .help("How often to check for playback state changes")
             } header: {
                 Text("System")
+            }
+
+            // Spotify Account Section
+            Section {
+                HStack {
+                    Image(systemName: spotifyAuth.isSignedIn ?
+                          "checkmark.circle.fill" : "circle")
+                        .foregroundColor(spotifyAuth.isSignedIn ? .green : .secondary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        if !spotifyAuth.isConfigured {
+                            Text("Unavailable in this build")
+                            Text("This build was compiled without Spotify API credentials.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text(spotifyAuth.isSignedIn ? "Connected" : "Not connected")
+                            Text("Sign in to search Spotify and queue tracks. Playback uses the local Spotify app to preserve autoplay.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if spotifyAuth.isSignedIn {
+                        Button("Disconnect") { spotifyAuth.signOut() }
+                    } else {
+                        Button("Connect Spotify") { spotifyAuth.beginSignIn() }
+                            .disabled(!spotifyAuth.isConfigured)
+                    }
+                }
+            } header: {
+                Text("Spotify Account")
             }
 
             // Permissions Section

@@ -74,6 +74,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup notification observers
         setupObservers()
 
+        // Register global hotkey for Spotify search popup.
+        SearchPopupController.shared.registerHotkey()
+
         // Check if onboarding is needed
         if preferencesManager.needsOnboarding {
             showOnboarding()
@@ -200,10 +203,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // media key commands to Reflex instead of browsers.
         nowPlayingManager = NowPlayingManager()
         nowPlayingManager.onRemoteCommand = { [weak self] command in
-            // Only require an actively-playing app for next/previous track.
-            // play, pause, and playPause should always reach the target app.
-            let requirePlaying = command == .nextTrack || command == .previousTrack
-            self?.smartRouter.routeCommand(command, requirePlaying: requirePlaying)
+            guard let self = self else { return false }
+            // Mirror the CGEvent-tap decision path so MPRemote doesn't bypass
+            // the browser-owns-audio checks. Returning .commandFailed from
+            // here lets mediaremoted try another Now Playing client, so a
+            // browser owning playback still gets its own play/pause keypress.
+            switch command {
+            case .play, .pause, .playPause:
+                let browserIsNowPlaying: Bool
+                if #available(macOS 14.2, *), let coreAudio = self.coreAudioActivityMonitor {
+                    browserIsNowPlaying = coreAudio.isBrowserOutputtingAudio
+                } else {
+                    browserIsNowPlaying = self.systemNowPlayingMonitor.isBrowserNowPlaying
+                }
+                let decision = self.smartRouter.decidePlayPause(browserIsNowPlaying: browserIsNowPlaying)
+                if decision == .passThrough { return false }
+                self.smartRouter.executePlayPauseDecision(decision)
+                return true
+            case .nextTrack, .previousTrack:
+                guard self.smartRouter.isSpotifyPlaying else { return false }
+                return self.smartRouter.routeCommand(command, requirePlaying: true)
+            default:
+                return self.smartRouter.routeCommand(command, requirePlaying: false)
+            }
         }
         nowPlayingManager.register()
 

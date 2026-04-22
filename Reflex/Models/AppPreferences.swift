@@ -1,13 +1,19 @@
 import Foundation
 
+/// Style of the selection highlight in the Spotify search popup.
+enum SearchHighlightStyle: String, Codable, CaseIterable {
+    case accent
+    case neutral
+}
+
 /// User preferences for the Reflex app
 struct AppPreferences: Codable {
     enum CodingKeys: String, CodingKey {
         case favoriteApps, lastUsedApp, autoSwitchEnabled, showNowPlaying, showTrackInfo,
              showArtistInMenuBar, launchAtLogin, enableVolumeKeys, fallbackToSystem,
              pollingInterval, showVisualFeedback, playAudioFeedback, customShortcuts,
-             hasCompletedOnboarding, preferencesVersion, restoreFocusOnClose,
-             updateMenuBarWhilePopoverOpen
+             hasCompletedOnboarding, preferencesVersion,
+             updateMenuBarWhilePopoverOpen, searchHighlightStyle
     }
 
     /// Bundle IDs of user's favorite media apps
@@ -49,11 +55,11 @@ struct AppPreferences: Codable {
     /// Custom keyboard shortcuts (future use)
     var customShortcuts: [String: String] = [:]
 
-    /// Return focus to previous app when closing popover from menu bar
-    var restoreFocusOnClose: Bool = true
-
     /// Allow menu bar title to update while the popover is open
     var updateMenuBarWhilePopoverOpen: Bool = false
+
+    /// Highlight style for the Spotify search popup selection
+    var searchHighlightStyle: SearchHighlightStyle = .accent
 
     /// App has been run before
     var hasCompletedOnboarding: Bool = false
@@ -81,8 +87,8 @@ struct AppPreferences: Codable {
         showVisualFeedback = try container.decodeIfPresent(Bool.self, forKey: .showVisualFeedback) ?? true
         playAudioFeedback = try container.decodeIfPresent(Bool.self, forKey: .playAudioFeedback) ?? false
         customShortcuts = try container.decodeIfPresent([String: String].self, forKey: .customShortcuts) ?? [:]
-        restoreFocusOnClose = try container.decodeIfPresent(Bool.self, forKey: .restoreFocusOnClose) ?? true
         updateMenuBarWhilePopoverOpen = try container.decodeIfPresent(Bool.self, forKey: .updateMenuBarWhilePopoverOpen) ?? false
+        searchHighlightStyle = try container.decodeIfPresent(SearchHighlightStyle.self, forKey: .searchHighlightStyle) ?? .accent
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
         preferencesVersion = try container.decodeIfPresent(Int.self, forKey: .preferencesVersion) ?? 1
     }

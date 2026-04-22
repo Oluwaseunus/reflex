@@ -8,7 +8,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
     private var popover: NSPopover?
     private var eventMonitor: Any?
     private var previousApp: NSRunningApplication?
-    private var closedViaStatusBar: Bool = false
+    private var suppressFocusRestoreOnClose: Bool = false
     private var popoverIsOpen: Bool = false
 
     /// Current app being displayed
@@ -203,6 +203,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
         // Store the currently focused app before we steal focus
         previousApp = NSWorkspace.shared.frontmostApplication
+        suppressFocusRestoreOnClose = false
 
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
@@ -216,7 +217,6 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
     /// Close the popover
     func closePopover() {
-        closedViaStatusBar = true
         popover?.performClose(nil)
         Logger.shared.debug("Popover closed")
     }
@@ -274,11 +274,10 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         popoverIsOpen = false
         // Apply the latest state now that the popover is closed
         updateDisplay(state: stateManager?.currentState)
-        if closedViaStatusBar, preferences?.prefs.restoreFocusOnClose == true,
-           let app = previousApp, !app.isTerminated {
+        if !suppressFocusRestoreOnClose, let app = previousApp, !app.isTerminated {
             app.activate()
         }
-        closedViaStatusBar = false
+        suppressFocusRestoreOnClose = false
         previousApp = nil
     }
 
@@ -297,6 +296,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             }
 
             DispatchQueue.main.async {
+                self.suppressFocusRestoreOnClose = true
                 popover.animates = true
                 popover.performClose(event)
                 self.stopEventMonitor()
