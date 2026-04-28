@@ -100,6 +100,9 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
+            if SpotifyPlaybackStartupGuard.isSuppressingReads {
+                return (nil, nil, nil)
+            }
             script = """
             tell application "Spotify"
                 if it is running and player state is playing then
@@ -244,6 +247,7 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
+            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             script = """
             tell application "Spotify"
                 if it is running then
@@ -275,6 +279,7 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
+            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             script = """
             tell application "Spotify"
                 if it is running then
@@ -305,6 +310,7 @@ final class AppleScriptHelper {
     static func getArtwork(from app: MediaApp) async -> NSImage? {
         switch app.bundleIdentifier {
         case "com.spotify.client":
+            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             let script = """
             tell application "Spotify"
                 if it is running then
@@ -423,6 +429,7 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
+            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             script = """
             tell application "Spotify"
                 if it is running then

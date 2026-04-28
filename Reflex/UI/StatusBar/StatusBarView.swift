@@ -167,8 +167,10 @@ struct NowPlayingCard: View {
     @State private var lastVolumeSendAt: Date = .distantPast
     @State private var lastVolumeSent: Int = -1
     @State private var lastPositionSendAt: Date = .distantPast
+    @State private var spotifyTrackStartupGraceUntil: Date = .distantPast
 
     private let scrubThrottle: TimeInterval = 0.03
+    private let spotifyTrackStartupGracePeriod: TimeInterval = 2.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -429,6 +431,9 @@ struct NowPlayingCard: View {
                 // optimistic toggle while stateManager hasn't repolled yet.
                 isPlaying = newValue
             }
+            .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.spotifyPlaybackStartDispatched)) { _ in
+                spotifyTrackStartupGraceUntil = Date().addingTimeInterval(SpotifyPlaybackStartupGuard.quietPeriod)
+            }
         .onDisappear {
             timerCancellable?.cancel()
             timerCancellable = nil
@@ -530,6 +535,7 @@ struct NowPlayingCard: View {
 
     private func loadVolumeInfo() {
         guard let app = state.app else { return }
+        if isSpotify && SpotifyPlaybackStartupGuard.isSuppressingReads { return }
         if let vol = AppleScriptHelper.getVolume(for: app) {
             currentVolume = vol
             isMuted = vol == 0
@@ -539,6 +545,7 @@ struct NowPlayingCard: View {
     private func syncVolumeState() {
         guard let app = state.app else { return }
         guard !isScrubbingVolume else { return }
+        if isSpotify && SpotifyPlaybackStartupGuard.isSuppressingReads { return }
         if let vol = AppleScriptHelper.getVolume(for: app) {
             isMuted = vol == 0
             if vol > 0 { currentVolume = vol }
@@ -630,17 +637,29 @@ struct NowPlayingCard: View {
 
     private func loadPlaybackInfo() {
         guard let app = state.app else { return }
-
-        // Always fetch position (lightweight local AppleScript)
-        if !isScrubbing, let position = AppleScriptHelper.getPlaybackPosition(from: app) {
-            self.currentPosition = position
-        }
+        let isSpotifyStartupSuppressed = isSpotify && SpotifyPlaybackStartupGuard.isSuppressingReads
 
         // Track change detection
         let trackId = "\(state.trackName ?? "")||\(state.artistName ?? "")"
         let trackChanged = trackId != lastTrackId
         if trackChanged {
             lastTrackId = trackId
+            if isSpotify && state.isPlaying && !isSpotifyStartupSuppressed {
+                spotifyTrackStartupGraceUntil = Date().addingTimeInterval(spotifyTrackStartupGracePeriod)
+            }
+        }
+
+        if isSpotifyStartupSuppressed {
+            return
+        }
+
+        if isSpotify, Date() < spotifyTrackStartupGraceUntil {
+            return
+        }
+
+        // Always fetch position (lightweight local AppleScript)
+        if !isScrubbing, let position = AppleScriptHelper.getPlaybackPosition(from: app) {
+            self.currentPosition = position
         }
 
         if let dur = AppleScriptHelper.getTrackDuration(from: app) {

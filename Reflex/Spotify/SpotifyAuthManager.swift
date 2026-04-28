@@ -157,14 +157,20 @@ final class SpotifyAuthManager: ObservableObject {
     }
 
     func signOut() {
+        clearAuthState(cancelRefresh: true)
+    }
+
+    private func clearAuthState(cancelRefresh: Bool) {
         authGeneration &+= 1
         callbackServer?.stop()
         callbackServer = nil
         resetPending()
         exchangeTask?.cancel()
         exchangeTask = nil
-        refreshTask?.cancel()
-        refreshTask = nil
+        if cancelRefresh {
+            refreshTask?.cancel()
+            refreshTask = nil
+        }
         SpotifyKeychain.clear()
         isSignedIn = false
     }
@@ -297,7 +303,7 @@ final class SpotifyAuthManager: ObservableObject {
                 throw SpotifyUserAPIError.tokenRefreshFailed(bodyText)
             }
             logger.error("Spotify auth: refresh token invalid_grant — signing out")
-            signOut()
+            clearAuthState(cancelRefresh: false)
             throw SpotifyUserAPIError.tokenRefreshFailed(bodyText)
         }
         logger.error("Spotify auth: refresh failed (\(http.statusCode)) — \(bodyText)")

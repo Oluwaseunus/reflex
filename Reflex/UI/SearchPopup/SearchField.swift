@@ -82,11 +82,12 @@ struct SearchField: NSViewRepresentable {
                 parent.onMoveDown()
                 return true
             case #selector(NSResponder.insertNewline(_:)),
-                 #selector(NSResponder.insertLineBreak(_:)):
+                 #selector(NSResponder.insertLineBreak(_:)),
+                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
                 // The field editor collapses all Return variants onto the same
                 // selector — inspect the current event's modifiers to distinguish
                 // plain Enter (play) from Cmd+Enter (queue) and Shift+Enter (local play).
-                let flags = NSApp.currentEvent?.modifierFlags ?? []
+                let flags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
                 if flags.contains(.command) {
                     parent.onCommandEnter()
                 } else if flags.contains(.shift) {
@@ -133,9 +134,10 @@ private final class InterceptingTextField: NSTextField {
             onMoveDown?()
             return
         case 36, 76: // return, keypad enter
-            if event.modifierFlags.contains(.command) {
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if flags.contains(.command) {
                 onCommandEnter?()
-            } else if event.modifierFlags.contains(.shift) {
+            } else if flags.contains(.shift) {
                 onShiftEnter?()
             } else {
                 onEnter?()

@@ -134,7 +134,7 @@ final class SearchPopupController: NSObject {
             prev.activate()
         }
         previousApp = nil
-        viewModel?.reset()
+        viewModel?.reset(loadRecents: false)
     }
 
     @MainActor
@@ -186,6 +186,27 @@ final class SearchPopupController: NSObject {
         // a brief "popup" rectangle under the search bar before the panel
         // settles to full opacity.
         panel.animationBehavior = .none
+        panel.handleKeyEvent = { [weak self] event in
+            guard let self else { return false }
+            switch event.keyCode {
+            case 53: // Escape
+                Task { @MainActor in self.close(restoreFocus: true) }
+                return true
+            case 36, 76: // return, keypad enter
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if flags.contains(.command) {
+                    Task { @MainActor in self.viewModel?.onCommandEnterPressed() }
+                    return true
+                }
+                if flags.contains(.shift) {
+                    Task { @MainActor in self.viewModel?.onShiftEnterPressed() }
+                    return true
+                }
+                return false
+            default:
+                return false
+            }
+        }
         panel.contentView = hosting
         return panel
     }
@@ -215,21 +236,23 @@ final class SearchPopupController: NSObject {
         // field editor doesn't reliably route it to doCommandBy (macOS treats it
         // as a key equivalent), so the SearchField coordinator never sees it.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, let panel = self.panel, event.window === panel else { return event }
+            guard let self, let panel = self.panel, panel.isVisible else { return event }
+            guard event.window === panel || panel.isKeyWindow else { return event }
             if event.keyCode == 53 { // Escape
                 Task { @MainActor in self.close(restoreFocus: true) }
                 return nil
             }
             if event.keyCode == 36 || event.keyCode == 76 {
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                 // Cmd/Shift+Return must be intercepted here — macOS routes
                 // modified Return as a key equivalent that bypasses the field
                 // editor's insertNewline: selector, and single-line mode
                 // suppresses insertLineBreak:.
-                if event.modifierFlags.contains(.command) {
+                if flags.contains(.command) {
                     Task { @MainActor in self.viewModel?.onCommandEnterPressed() }
                     return nil
                 }
-                if event.modifierFlags.contains(.shift) {
+                if flags.contains(.shift) {
                     Task { @MainActor in self.viewModel?.onShiftEnterPressed() }
                     return nil
                 }
@@ -294,6 +317,22 @@ private extension NSView {
 }
 
 final class SearchPanel: NSPanel {
+    var handleKeyEvent: ((NSEvent) -> Bool)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, handleKeyEvent?(event) == true {
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, handleKeyEvent?(event) == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }

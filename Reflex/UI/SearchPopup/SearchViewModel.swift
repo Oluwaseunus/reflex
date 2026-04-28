@@ -32,6 +32,12 @@ final class SearchViewModel: ObservableObject {
 
     private var searchTask: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?
+    private var isPlaybackRequestInFlight = false
+
+    private enum LocalPlaybackPath {
+        case appleEventNoReply
+        case appleEventWaitForReply
+    }
 
     init(search: MediaSearchProvider, playback: MediaPlaybackProvider, recents: RecentPlaysStore = .shared) {
         self.search = search
@@ -39,15 +45,16 @@ final class SearchViewModel: ObservableObject {
         self.recents = recents
     }
 
-    func reset() {
+    func reset(loadRecents: Bool = true) {
         searchTask?.cancel()
         searchTask = nil
         toastTask?.cancel()
         toastTask = nil
         toast = nil
+        isPlaybackRequestInFlight = false
         query = ""
         selectedIndex = 0
-        state = idleState()
+        state = loadRecents ? idleState() : .idle
     }
 
     private func showToast(_ message: String, duration: TimeInterval = 1.6) {
@@ -120,49 +127,42 @@ final class SearchViewModel: ObservableObject {
 
     func onEnterPressed() {
         guard let item = currentItem() else { return }
+        playLocal(item: item, path: .appleEventNoReply)
+    }
+
+    func onShiftEnterPressed() {
+        guard let item = currentItem() else { return }
+        playLocal(item: item, path: .appleEventWaitForReply)
+    }
+
+    private func playLocal(item: MediaSearchResult, path: LocalPlaybackPath) {
         guard let provider = playback as? SpotifyPlaybackProvider else { return }
+        guard !isPlaybackRequestInFlight else { return }
+        isPlaybackRequestInFlight = true
         Task {
             do {
-                try provider.playLocal(item: item)
+                switch path {
+                case .appleEventNoReply:
+                    try provider.playLocal(item: item)
+                case .appleEventWaitForReply:
+                    try provider.playLocalAwaitingReply(item: item)
+                }
                 self.recents.record(item)
                 await MainActor.run {
                     SearchPopupController.shared.closeAfterPlayback()
                 }
             } catch MediaPlaybackError.playerNotRunning {
-                await MainActor.run { self.state = .error(.playerNotRunning) }
+                await MainActor.run {
+                    self.isPlaybackRequestInFlight = false
+                    self.state = .error(.playerNotRunning)
+                }
             } catch {
-                await MainActor.run { self.state = .error(.generic) }
+                await MainActor.run {
+                    self.isPlaybackRequestInFlight = false
+                    self.state = .error(.generic)
+                }
             }
         }
-    }
-
-    // Web API play path. Kept for reference — the Web API's bare-track play
-    // leaves the Up Next queue empty and doesn't trigger autoplay when the
-    // track ends (it has no context to extend from). Falls back to AppleScript
-    // when not signed in. Re-enable if we ever want no-focus-steal at the
-    // cost of autoplay.
-    // func onEnterPressed() {
-    //     guard let item = currentItem() else { return }
-    //     Task {
-    //         do {
-    //             try await playback.play(item: item)
-    //             self.recents.record(item)
-    //             await MainActor.run {
-    //                 SearchPopupController.shared.closeAfterPlayback()
-    //             }
-    //         } catch MediaPlaybackError.playerNotRunning {
-    //             await MainActor.run { self.state = .error(.playerNotRunning) }
-    //         } catch {
-    //             await MainActor.run { self.state = .error(.generic) }
-    //         }
-    //     }
-    // }
-
-    /// Play via AppleScript, bypassing the Web API. Lets the user opt into
-    /// the native Spotify client's playback behavior (implicit context/radio
-    /// after a track ends) instead of the Web API's bare-track play.
-    func onShiftEnterPressed() {
-        // No-op. Enter already drives the local-client playback path.
     }
 
     /// Queue the currently-selected track. Requires sign-in; silently ignored

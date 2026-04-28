@@ -16,6 +16,8 @@ struct MediaSearchResult: Identifiable, Equatable, Codable {
     /// when playing via the Web API. Gives native "click a track in an album"
     /// behavior — plays this item then continues through the container.
     let contextURI: String?
+    let artistName: String?
+    let albumName: String?
 }
 
 enum MediaSearchError: Error, Equatable {

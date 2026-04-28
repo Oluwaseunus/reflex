@@ -6,10 +6,8 @@ import MediaPlayer
 /// Commands received here are forwarded to Spotify via the onRemoteCommand callback.
 final class NowPlayingManager {
     /// Called when a remote command is received. Must return whether the
-    /// command was actually routed — returning `.success` unconditionally
-    /// makes mediaremoted consider the key consumed, so when routing fails
-    /// (no eligible app, Spotify not running) the keypress silently drops
-    /// instead of falling through to other Now Playing clients.
+    /// command was actually routed; handlers return `.commandFailed` when
+    /// Reflex did not send the command instead of reporting false success.
     var onRemoteCommand: ((MediaCommand) -> Bool)?
 
     private var isRegistered = false

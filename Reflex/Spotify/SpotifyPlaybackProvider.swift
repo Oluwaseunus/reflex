@@ -10,17 +10,24 @@ final class SpotifyPlaybackProvider: MediaPlaybackProvider {
         if await SpotifyAuthManager.shared.isSignedIn {
             try await playViaWebAPI(item: item)
         } else {
-            try playViaAppleScript(uri: item.playbackURI)
+            try playViaAppleScript(item: item)
         }
     }
 
     /// Bypass the Web API and always go through the local Spotify client via
-    /// AppleScript. Used by Shift+Enter so the user can opt into the native
-    /// client's implicit-context autoplay. Cost: Spotify self-activates (the
-    /// research confirmed no local-client path avoids this); the popup's
-    /// closeAfterPlayback re-activates the previous app to mask the flicker.
+    /// AppleScript so Spotify owns autoplay behavior.
     func playLocal(item: MediaSearchResult) throws {
-        try playViaAppleScript(uri: item.playbackURI)
+        try playViaAppleScript(item: item)
+    }
+
+    /// Same bare local-client command as `playLocal`, but wait for Spotify's
+    /// AppleEvent reply before closing the popup/restoring focus.
+    func playLocalAwaitingReply(item: MediaSearchResult) throws {
+        try playViaAppleScript(
+            item: item,
+            options: [.waitForReply, .neverInteract],
+            timeout: 10
+        )
     }
 
     // MARK: - Queue (only supported when signed in)
@@ -64,6 +71,7 @@ final class SpotifyPlaybackProvider: MediaPlaybackProvider {
                 deviceID: deviceID
             )
         }
+        notifyPlaybackStartDispatched(item: item)
     }
 
     /// Launch Spotify if it isn't running, then poll GET /me/player/devices
@@ -104,7 +112,11 @@ final class SpotifyPlaybackProvider: MediaPlaybackProvider {
 
     // MARK: - AppleScript fallback (not signed in)
 
-    private func playViaAppleScript(uri: String) throws {
+    private func playViaAppleScript(
+        item: MediaSearchResult,
+        options: NSAppleEventDescriptor.SendOptions = [.noReply, .neverInteract],
+        timeout: TimeInterval = 1
+    ) throws {
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
         guard let app = running.first else {
             throw MediaPlaybackError.playerNotRunning
@@ -117,12 +129,24 @@ final class SpotifyPlaybackProvider: MediaPlaybackProvider {
             returnID: AEReturnID(kAutoGenerateReturnID),
             transactionID: AETransactionID(kAnyTransactionID)
         )
-        event.setParam(NSAppleEventDescriptor(string: uri), forKeyword: keyDirectObject)
+        event.setParam(NSAppleEventDescriptor(string: item.playbackURI), forKeyword: keyDirectObject)
+        let suppression = SpotifyPlaybackStartupGuard.suppressReadsForStartup()
         do {
-            _ = try event.sendEvent(options: .defaultOptions, timeout: 10)
+            _ = try event.sendEvent(options: options, timeout: timeout)
+            notifyPlaybackStartDispatched(item: item)
         } catch {
+            SpotifyPlaybackStartupGuard.clearSuppression(suppression)
             throw MediaPlaybackError.internal(underlying: error)
         }
+    }
+
+    private func notifyPlaybackStartDispatched(item: MediaSearchResult) {
+        SpotifyPlaybackStartupGuard.suppressReadsForStartup()
+        NotificationCenter.default.post(
+            name: Constants.Notifications.spotifyPlaybackStartDispatched,
+            object: nil,
+            userInfo: [Constants.NotificationUserInfo.spotifyPlaybackItem: item]
+        )
     }
 
     private func fourCharCode(_ s: String) -> FourCharCode {

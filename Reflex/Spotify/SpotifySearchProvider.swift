@@ -91,7 +91,9 @@ final class SpotifySearchProvider: MediaSearchProvider {
                     type: .track,
                     artworkURL: smallestImageURL(item.album.images),
                     playbackURI: item.uri,
-                    contextURI: item.album.uri
+                    contextURI: item.album.uri,
+                    artistName: primaryArtist.isEmpty ? nil : primaryArtist,
+                    albumName: item.album.name
                 )
             }
             let albums = (decoded.albums?.items ?? []).prefix(2).map { item in
@@ -103,7 +105,9 @@ final class SpotifySearchProvider: MediaSearchProvider {
                     type: .album,
                     artworkURL: smallestImageURL(item.images),
                     playbackURI: item.uri,
-                    contextURI: nil
+                    contextURI: nil,
+                    artistName: primaryArtist.isEmpty ? nil : primaryArtist,
+                    albumName: nil
                 )
             }
             return Array(tracks) + Array(albums)

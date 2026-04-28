@@ -205,9 +205,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         nowPlayingManager.onRemoteCommand = { [weak self] command in
             guard let self = self else { return false }
             // Mirror the CGEvent-tap decision path so MPRemote doesn't bypass
-            // the browser-owns-audio checks. Returning .commandFailed from
-            // here lets mediaremoted try another Now Playing client, so a
-            // browser owning playback still gets its own play/pause keypress.
+            // the browser-owns-audio checks.
             switch command {
             case .play, .pause, .playPause:
                 let browserIsNowPlaying: Bool
@@ -233,6 +231,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stateManager.$currentState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
+                if state?.app?.bundleIdentifier == "com.spotify.client" {
+                    // Reflex proxies Spotify; it must not claim system audio
+                    // playback ownership for itself.
+                    self?.nowPlayingManager.updateNowPlaying(playing: false)
+                    return
+                }
                 self?.nowPlayingManager.updateNowPlaying(
                     playing: state?.isPlaying ?? false,
                     track: state?.trackName,

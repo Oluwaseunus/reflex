@@ -8,7 +8,12 @@ enum Constants {
         static let playbackStateChanged = Notification.Name("com.reflex.playbackStateChanged")
         static let activeAppChanged = Notification.Name("com.reflex.activeAppChanged")
         static let commandSent = Notification.Name("com.reflex.commandSent")
+        static let spotifyPlaybackStartDispatched = Notification.Name("com.reflex.spotifyPlaybackStartDispatched")
         static let permissionStatusChanged = Notification.Name("com.reflex.permissionStatusChanged")
+    }
+
+    enum NotificationUserInfo {
+        static let spotifyPlaybackItem = "spotifyPlaybackItem"
     }
 
     /// UserDefaults keys

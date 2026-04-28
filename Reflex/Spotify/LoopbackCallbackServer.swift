@@ -52,6 +52,8 @@ final class LoopbackCallbackServer {
         timeoutTask = nil
         listener?.cancel()
         listener = nil
+        expectedState = ""
+        boundPort = 0
     }
 
     private func tryBind(port: UInt16) -> Bool {
@@ -61,7 +63,6 @@ final class LoopbackCallbackServer {
         // is otherwise routable.
         let params = NWParameters.tcp
         params.requiredInterfaceType = .loopback
-        params.allowLocalEndpointReuse = true
 
         do {
             let listener = try NWListener(using: params, on: nwPort)
