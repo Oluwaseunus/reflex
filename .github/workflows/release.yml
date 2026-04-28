@@ -16,6 +16,11 @@ jobs:
       APP_NAME: Reflex
       BUNDLE_ID: com.reflex.app
       LANDING_REPO: Oluwaseunus/reflex-landing-page
+      # Job-scoped so every `swift build` step sees the same client id. If
+      # scoped to just the first build, the post-accessor-patch rebuild would
+      # invoke the GenerateSpotifySecrets plugin with an empty env var and
+      # overwrite the generated file with an empty client id.
+      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +29,35 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode.app
 
       - name: Build (release)
-        run: swift build --configuration release --arch arm64 --arch x86_64
+        run: |
+          set -euo pipefail
+          if [ -z "${SPOTIFY_CLIENT_ID:-}" ]; then
+            echo "::error::SPOTIFY_CLIENT_ID secret is not set — release builds must include it or Spotify support will be disabled."
+            exit 1
+          fi
+          swift build --configuration release --arch arm64 --arch x86_64
+
+      - name: Patch Bundle.module accessors and rebuild
+        run: |
+          set -euo pipefail
+          # SPM's generated Bundle.module resolves via Bundle.main.bundleURL.
+          # For a packaged .app that points at the .app root, where SPM package
+          # bundles (e.g. KeyboardShortcuts localizations) are not staged —
+          # loading them would fail at runtime. Rewrite the accessor to resolve
+          # under Bundle.main.resourceURL (Contents/Resources/) and relink.
+          NEEDLE='Bundle.main.bundleURL.appendingPathComponent'
+          REPLACEMENT='(Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent'
+          PATCHED_ANY=0
+          while IFS= read -r -d '' accessor; do
+            if grep -qF "$REPLACEMENT" "$accessor"; then continue; fi
+            if grep -qF "$NEEDLE" "$accessor"; then
+              sed -i '' "s|${NEEDLE}|${REPLACEMENT}|g" "$accessor"
+              PATCHED_ANY=1
+            fi
+          done < <(find .build -name "resource_bundle_accessor.swift" -print0)
+          if [ "$PATCHED_ANY" -eq 1 ]; then
+            swift build --configuration release --arch arm64 --arch x86_64
+          fi
 
       - name: Assemble .app bundle
         run: |
@@ -39,6 +72,16 @@ jobs:
           if [ -d "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" ]; then
             cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle/"* "$APP_BUNDLE/Contents/Resources/"
           fi
+          # Stage third-party SPM resource bundles (e.g. KeyboardShortcuts)
+          # under Contents/Resources so the patched Bundle.module accessor
+          # resolves them at runtime.
+          for pkg_bundle in "$BUILD_DIR"/*.bundle; do
+            [ -d "$pkg_bundle" ] || continue
+            name=$(basename "$pkg_bundle")
+            if [ "$name" != "${APP_NAME}_${APP_NAME}.bundle" ]; then
+              cp -R "$pkg_bundle" "$APP_BUNDLE/Contents/Resources/"
+            fi
+          done
           VERSION="0.1.${{ github.run_number }}"
           cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>

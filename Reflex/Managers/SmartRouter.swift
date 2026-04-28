@@ -19,7 +19,10 @@ final class SmartRouter: ObservableObject {
     @Published var lastSpotifyVolume: Int = 50
 
     private var pollingTimer: Timer?
+    private var startupPollTimer: Timer?
+    private var suppressSpotifyPollingUntil: Date?
     private var cancellables = Set<AnyCancellable>()
+    private let spotifyStartupPollQuietPeriod = SpotifyPlaybackStartupGuard.quietPeriod
 
     // MARK: - Thread-safe cached state (read from CGEvent tap thread)
 
@@ -85,6 +88,49 @@ final class SmartRouter: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: Constants.Notifications.spotifyPlaybackStartDispatched)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                let item = notification.userInfo?[Constants.NotificationUserInfo.spotifyPlaybackItem] as? MediaSearchResult
+                self?.deferSpotifyStartupPoll(for: item)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func deferSpotifyStartupPoll(for item: MediaSearchResult?) {
+        SpotifyPlaybackStartupGuard.suppressReadsForStartup()
+        suppressSpotifyPollingUntil = Date().addingTimeInterval(spotifyStartupPollQuietPeriod)
+        startupPollTimer?.invalidate()
+        startupPollTimer = Timer.scheduledTimer(withTimeInterval: spotifyStartupPollQuietPeriod, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            suppressSpotifyPollingUntil = nil
+            refreshSpotifyPlaybackState(reason: "startup quiet period ended")
+        }
+        startupPollTimer?.tolerance = 0.25
+        if let spotify = appDetector.app(withBundleId: spotifyBundleId), spotify.isRunning {
+            setSpotifyRunning(true)
+            setSpotifyPlaying(true)
+            if let item {
+                publishOptimisticSpotifyState(spotify: spotify, item: item)
+            }
+        }
+        Logger.shared.debug("Paused Spotify playback polling during track startup")
+    }
+
+    private func publishOptimisticSpotifyState(spotify: MediaApp, item: MediaSearchResult) {
+        stateManager.dismissedTrackKey = nil
+        stateManager.currentArtwork = nil
+        stateManager.updateState(PlaybackState(
+            app: spotify,
+            isPlaying: true,
+            trackName: item.title,
+            artistName: item.artistName,
+            albumName: item.albumName,
+            timestamp: Date()
+        ))
+        activeApp = spotify
+        Logger.shared.debug("Optimistically updated Spotify display: \(item.title)")
     }
 
     /// Route a media command to the appropriate app
@@ -278,6 +324,9 @@ final class SmartRouter: ObservableObject {
     func stopPolling() {
         pollingTimer?.invalidate()
         pollingTimer = nil
+        startupPollTimer?.invalidate()
+        startupPollTimer = nil
+        suppressSpotifyPollingUntil = nil
         isPolling = false
         Logger.shared.info("Stopped playback state polling")
     }
@@ -365,6 +414,17 @@ final class SmartRouter: ObservableObject {
 
     /// Poll for current playback state and update routing/display accordingly (Spotify-only)
     private func pollPlaybackState() {
+        if SpotifyPlaybackStartupGuard.isSuppressingReads {
+            Logger.shared.debug("Skipping Spotify playback poll during track startup")
+            return
+        }
+        if let until = suppressSpotifyPollingUntil {
+            if Date() < until {
+                Logger.shared.debug("Skipping Spotify playback poll during track startup")
+                return
+            }
+            suppressSpotifyPollingUntil = nil
+        }
         refreshSpotifyPlaybackState(reason: "timer")
     }
 

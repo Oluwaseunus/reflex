@@ -1,36 +1,39 @@
 import SwiftUI
+import KeyboardShortcuts
 
-/// Shortcuts preferences tab (placeholder for future feature)
 struct ShortcutsPreferencesView: View {
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Custom Shortcuts")
+                    .font(.headline)
+                Text("Rebind Reflex's global shortcuts below.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
 
-            Image(systemName: "keyboard")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Spotify Search")
+                    Spacer()
+                    KeyboardShortcuts.Recorder(for: .openSpotifySearch)
+                }
+            }
+            .padding()
+            .background(Color.secondary.opacity(0.08))
+            .cornerRadius(8)
 
-            Text("Custom Shortcuts")
-                .font(.headline)
-
-            Text("Custom keyboard shortcuts will be available in a future update.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-
-            // Current shortcuts info
             VStack(alignment: .leading, spacing: 8) {
                 Text("Current Media Keys")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                ShortcutRow(key: "F7 / ", action: "Previous Track")
+                ShortcutRow(key: "F7 / ⏮", action: "Previous Track")
                 ShortcutRow(key: "F8 / ▶", action: "Play/Pause")
-                ShortcutRow(key: "F9 / ", action: "Next Track")
+                ShortcutRow(key: "F9 / ⏭", action: "Next Track")
             }
             .padding()
-            .background(Color.secondary.opacity(0.1))
+            .background(Color.secondary.opacity(0.08))
             .cornerRadius(8)
 
             Spacer()
@@ -39,7 +42,6 @@ struct ShortcutsPreferencesView: View {
     }
 }
 
-/// Row showing a keyboard shortcut
 struct ShortcutRow: View {
     let key: String
     let action: String

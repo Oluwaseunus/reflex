@@ -50,12 +50,24 @@ final class SystemNowPlayingMonitor {
 
     private var getNowPlayingInfo: MRMediaRemoteGetNowPlayingInfoFunction?
     private var pollingTimer: Timer?
+    private var playbackStartObserver: NSObjectProtocol?
+    private var suppressPollingUntil: Date?
     private var isMonitoring = false
+    private let spotifyStartupPollQuietPeriod = SpotifyPlaybackStartupGuard.quietPeriod
 
     // MARK: - Lifecycle
 
     init() {
         loadFramework()
+        playbackStartObserver = NotificationCenter.default.addObserver(
+            forName: Constants.Notifications.spotifyPlaybackStartDispatched,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            SpotifyPlaybackStartupGuard.suppressReadsForStartup()
+            self?.suppressPollingUntil = Date().addingTimeInterval(self?.spotifyStartupPollQuietPeriod ?? 6.0)
+            Logger.shared.debug("SystemNowPlayingMonitor: Paused polling during Spotify track startup")
+        }
     }
 
     /// Dynamically load MediaRemote.framework and resolve the function pointer.
@@ -109,6 +121,17 @@ final class SystemNowPlayingMonitor {
     /// Perform a single poll of the system now-playing info.
     private func poll() {
         guard let getNowPlayingInfo = getNowPlayingInfo else { return }
+        if SpotifyPlaybackStartupGuard.isSuppressingReads {
+            Logger.shared.debug("SystemNowPlayingMonitor: Skipping poll during Spotify track startup")
+            return
+        }
+        if let until = suppressPollingUntil {
+            if Date() < until {
+                Logger.shared.debug("SystemNowPlayingMonitor: Skipping poll during Spotify track startup")
+                return
+            }
+            suppressPollingUntil = nil
+        }
 
         getNowPlayingInfo(DispatchQueue.main) { [weak self] info in
             guard let self = self else { return }
@@ -139,5 +162,8 @@ final class SystemNowPlayingMonitor {
 
     deinit {
         stopMonitoring()
+        if let playbackStartObserver {
+            NotificationCenter.default.removeObserver(playbackStartObserver)
+        }
     }
 }

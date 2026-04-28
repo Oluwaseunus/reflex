@@ -46,8 +46,48 @@ fi
 echo "==> Killing any running instances of $APP_NAME..."
 killall "$APP_NAME" 2>/dev/null || true
 
+# Source local .env so SPOTIFY_CLIENT_ID is exported into swift build's
+# environment. The GenerateSpotifySecrets build-tool plugin reads it and bakes
+# it into the binary. Production/CI builds should export it via the runner's
+# environment instead of using a .env.
+if [ -f ".env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
+
+if [ -z "${SPOTIFY_CLIENT_ID:-}" ]; then
+    echo "==> Warning: SPOTIFY_CLIENT_ID not set. Spotify search/playback will be unavailable."
+fi
+
 echo "==> Building $APP_NAME in release mode..."
 swift build --configuration release
+
+# Patch SPM-generated Bundle.module accessors so they find resource bundles under
+# Contents/Resources/ when the main bundle is a macOS .app. SPM hardcodes
+# Bundle.main.bundleURL.appendingPathComponent("<pkg>_<pkg>.bundle") as the primary
+# lookup — that resolves to the .app root, which we can't write to without breaking
+# codesigning. Substituting Bundle.main.resourceURL resolves to Contents/Resources/
+# for an .app and stays equivalent (via the bundleURL fallback) for non-app mains.
+echo "==> Patching Bundle.module accessors..."
+ACCESSOR_NEEDLE='Bundle.main.bundleURL.appendingPathComponent'
+ACCESSOR_REPLACEMENT='(Bundle.main.resourceURL ?? Bundle.main.bundleURL).appendingPathComponent'
+PATCHED_ANY=0
+while IFS= read -r -d '' accessor; do
+    if grep -qF "$ACCESSOR_REPLACEMENT" "$accessor"; then
+        continue
+    fi
+    if grep -qF "$ACCESSOR_NEEDLE" "$accessor"; then
+        sed -i '' "s|${ACCESSOR_NEEDLE}|${ACCESSOR_REPLACEMENT}|g" "$accessor"
+        PATCHED_ANY=1
+    fi
+done < <(find .build/arm64-apple-macosx/release -name "resource_bundle_accessor.swift" -print0)
+
+if [ "$PATCHED_ANY" -eq 1 ]; then
+    echo "==> Re-linking with patched accessors..."
+    swift build --configuration release
+fi
 
 echo "==> Creating app bundle..."
 rm -rf "$APP_BUNDLE"
@@ -61,6 +101,20 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 if [ -d "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" ]; then
     cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle/"* "$APP_BUNDLE/Contents/Resources/"
 fi
+
+# Copy SwiftPM-generated resource bundles from third-party packages
+# (e.g. KeyboardShortcuts_KeyboardShortcuts.bundle with localized strings).
+# The accessor-patch step above rewrites Bundle.module to look under
+# Bundle.main.resourceURL, i.e. Contents/Resources/ — so staging these bundles
+# there makes them discoverable at runtime without touching the .app root
+# (which would break codesigning).
+for pkg_bundle in "$BUILD_DIR"/*.bundle; do
+    [ -d "$pkg_bundle" ] || continue
+    name=$(basename "$pkg_bundle")
+    if [ "$name" != "${APP_NAME}_${APP_NAME}.bundle" ]; then
+        cp -R "$pkg_bundle" "$APP_BUNDLE/Contents/Resources/"
+    fi
+done
 
 # Create Info.plist with resolved variables
 # IMPORTANT: must exist BEFORE codesign so the signature binds CFBundleIdentifier
@@ -90,7 +144,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>LSUIElement</key>
     <true/>
     <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
+    <string>14.0</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>NSAppleEventsUsageDescription</key>

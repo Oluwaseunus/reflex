@@ -5,8 +5,10 @@ import MediaPlayer
 /// This ensures mediaremoted routes media key commands to Reflex instead of browsers.
 /// Commands received here are forwarded to Spotify via the onRemoteCommand callback.
 final class NowPlayingManager {
-    /// Called when a remote command is received — routes to Spotify via SmartRouter
-    var onRemoteCommand: ((MediaCommand) -> Void)?
+    /// Called when a remote command is received. Must return whether the
+    /// command was actually routed; handlers return `.commandFailed` when
+    /// Reflex did not send the command instead of reporting false success.
+    var onRemoteCommand: ((MediaCommand) -> Bool)?
 
     private var isRegistered = false
 
@@ -19,36 +21,31 @@ final class NowPlayingManager {
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
             Logger.shared.event("MPRemoteCommand: play → routing to Spotify")
-            self?.onRemoteCommand?(.play)
-            return .success
+            return (self?.onRemoteCommand?(.play) ?? false) ? .success : .commandFailed
         }
 
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             Logger.shared.event("MPRemoteCommand: pause → routing to Spotify")
-            self?.onRemoteCommand?(.pause)
-            return .success
+            return (self?.onRemoteCommand?(.pause) ?? false) ? .success : .commandFailed
         }
 
         commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             Logger.shared.event("MPRemoteCommand: togglePlayPause → routing to Spotify")
-            self?.onRemoteCommand?(.playPause)
-            return .success
+            return (self?.onRemoteCommand?(.playPause) ?? false) ? .success : .commandFailed
         }
 
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             Logger.shared.event("MPRemoteCommand: nextTrack → routing to Spotify")
-            self?.onRemoteCommand?(.nextTrack)
-            return .success
+            return (self?.onRemoteCommand?(.nextTrack) ?? false) ? .success : .commandFailed
         }
 
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
             Logger.shared.event("MPRemoteCommand: previousTrack → routing to Spotify")
-            self?.onRemoteCommand?(.previousTrack)
-            return .success
+            return (self?.onRemoteCommand?(.previousTrack) ?? false) ? .success : .commandFailed
         }
 
         // Disable commands we don't handle
