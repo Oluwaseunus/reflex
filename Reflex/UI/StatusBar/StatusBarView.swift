@@ -395,12 +395,12 @@ struct NowPlayingCard: View {
                         // Time labels
                         HStack {
                             Text(formatTime(isScrubbing ? scrubPosition : currentPosition))
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                                 .frame(minWidth: 46, alignment: .leading)
                             Spacer()
                             Text(formatTime(duration))
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
                                 .frame(minWidth: 46, alignment: .trailing)
                         }
