@@ -86,7 +86,7 @@ struct SearchField: NSViewRepresentable {
                  #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
                 // The field editor collapses all Return variants onto the same
                 // selector — inspect the current event's modifiers to distinguish
-                // plain Enter (play) from Cmd+Enter (queue) and Shift+Enter (local play).
+                // plain Enter (play) from Cmd+Enter (queue) and Shift+Enter (play).
                 let flags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
                 if flags.contains(.command) {
                     parent.onCommandEnter()

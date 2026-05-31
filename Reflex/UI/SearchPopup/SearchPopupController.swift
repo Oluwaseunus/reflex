@@ -260,7 +260,8 @@ final class SearchPopupController: NSObject {
             return event
         }
 
-        // Close when the panel loses key status (Cmd+Tab, clicking on another
+        // Close when the panel loses key status (gesture/window navigation,
+        // Cmd+Tab, clicking on another
         // app's window, etc). Since we no longer call NSApp.activate on open,
         // the app never becomes frontmost — so didResignActiveNotification
         // never fires, but panel key loss still does.
@@ -269,7 +270,7 @@ final class SearchPopupController: NSObject {
             object: panel,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.close() }
+            Task { @MainActor in self?.close(restoreFocus: false) }
         }
 
         // Close at the *start* of app/space navigation, not at the end. The
@@ -285,7 +286,7 @@ final class SearchPopupController: NSObject {
             // Ctrl+Left (123) / Ctrl+Right (124): Space switching.
             let isSpaceSwitch = flags.contains(.control) && (code == 123 || code == 124)
             if isAppSwitch || isSpaceSwitch {
-                Task { @MainActor in self?.close() }
+                Task { @MainActor in self?.close(restoreFocus: false) }
             }
         }
     }

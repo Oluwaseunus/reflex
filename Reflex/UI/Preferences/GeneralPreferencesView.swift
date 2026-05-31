@@ -118,7 +118,7 @@ struct GeneralPreferencesView: View {
                                 .foregroundColor(.secondary)
                         } else {
                             Text(spotifyAuth.isSignedIn ? "Connected" : "Not connected")
-                            Text("Sign in to search Spotify and queue tracks. Playback uses the local Spotify app to preserve autoplay.")
+                            Text("Sign in to search Spotify, play tracks and albums, and queue tracks.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }

@@ -16,9 +16,11 @@ final class RecentPlaysStore {
             return []
         }
         return records.compactMap { $0.value?.searchResult }
+            .filter { $0.type != .playlist }
     }
 
     func record(_ item: MediaSearchResult) {
+        guard item.type != .playlist else { return }
         var current = load()
         current.removeAll { $0.id == item.id }
         current.insert(item, at: 0)

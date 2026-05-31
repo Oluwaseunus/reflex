@@ -144,7 +144,7 @@ private struct StatusBar: View {
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "return")
-                    Text("to play track/album").padding(.leading, 2)
+                    Text("to play").padding(.leading, 2)
                 }
                 if showQueueHint {
                     HStack(spacing: 4) {
@@ -279,8 +279,16 @@ private struct ResultRow: View {
 private struct TypeTag: View {
     let type: MediaItemType
     var useInvertedForeground: Bool = false
+    private var label: String {
+        switch type {
+        case .track: return "Track"
+        case .album: return "Album"
+        case .playlist: return "Playlist"
+        }
+    }
+
     var body: some View {
-        Text(type == .track ? "Track" : "Album")
+        Text(label)
             .font(.system(size: 10, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

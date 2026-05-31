@@ -34,11 +34,6 @@ final class SearchViewModel: ObservableObject {
     private var toastTask: Task<Void, Never>?
     private var isPlaybackRequestInFlight = false
 
-    private enum LocalPlaybackPath {
-        case appleEventNoReply
-        case appleEventWaitForReply
-    }
-
     init(search: MediaSearchProvider, playback: MediaPlaybackProvider, recents: RecentPlaysStore = .shared) {
         self.search = search
         self.playback = playback
@@ -127,26 +122,20 @@ final class SearchViewModel: ObservableObject {
 
     func onEnterPressed() {
         guard let item = currentItem() else { return }
-        playLocal(item: item, path: .appleEventNoReply)
+        play(item: item)
     }
 
     func onShiftEnterPressed() {
         guard let item = currentItem() else { return }
-        playLocal(item: item, path: .appleEventWaitForReply)
+        play(item: item)
     }
 
-    private func playLocal(item: MediaSearchResult, path: LocalPlaybackPath) {
-        guard let provider = playback as? SpotifyPlaybackProvider else { return }
+    private func play(item: MediaSearchResult) {
         guard !isPlaybackRequestInFlight else { return }
         isPlaybackRequestInFlight = true
         Task {
             do {
-                switch path {
-                case .appleEventNoReply:
-                    try provider.playLocal(item: item)
-                case .appleEventWaitForReply:
-                    try provider.playLocalAwaitingReply(item: item)
-                }
+                try await playback.play(item: item)
                 self.recents.record(item)
                 await MainActor.run {
                     SearchPopupController.shared.closeAfterPlayback()
@@ -155,6 +144,21 @@ final class SearchViewModel: ObservableObject {
                 await MainActor.run {
                     self.isPlaybackRequestInFlight = false
                     self.state = .error(.playerNotRunning)
+                }
+            } catch SpotifyUserAPIError.notSignedIn {
+                await MainActor.run {
+                    self.isPlaybackRequestInFlight = false
+                    self.state = .error(.notAuthenticated)
+                }
+            } catch SpotifyUserAPIError.rateLimited {
+                await MainActor.run {
+                    self.isPlaybackRequestInFlight = false
+                    self.state = .error(.rateLimited)
+                }
+            } catch SpotifyUserAPIError.network {
+                await MainActor.run {
+                    self.isPlaybackRequestInFlight = false
+                    self.state = .error(.network)
                 }
             } catch {
                 await MainActor.run {
@@ -166,7 +170,7 @@ final class SearchViewModel: ObservableObject {
     }
 
     /// Queue the currently-selected track. Requires sign-in; silently ignored
-    /// for albums (Web API's queue endpoint only accepts single tracks).
+    /// for non-track results (Web API's queue endpoint only accepts single tracks).
     /// Unlike play, queue keeps the popup open so the user can queue multiple
     /// tracks in a row — confirmation comes via a transient toast.
     func onCommandEnterPressed() {
@@ -181,6 +185,12 @@ final class SearchViewModel: ObservableObject {
                 }
             } catch MediaPlaybackError.playerNotRunning {
                 await MainActor.run { self.state = .error(.playerNotRunning) }
+            } catch SpotifyUserAPIError.notSignedIn {
+                await MainActor.run { self.state = .error(.notAuthenticated) }
+            } catch SpotifyUserAPIError.rateLimited {
+                await MainActor.run { self.state = .error(.rateLimited) }
+            } catch SpotifyUserAPIError.network {
+                await MainActor.run { self.state = .error(.network) }
             } catch {
                 await MainActor.run { self.state = .error(.generic) }
             }
