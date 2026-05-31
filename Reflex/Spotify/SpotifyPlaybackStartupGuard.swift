@@ -2,7 +2,7 @@ import Foundation
 import os
 
 /// Shared guard for the fragile window immediately after dispatching Spotify
-/// local-client playback. During this window Spotify is rebuilding its player
+/// playback startup. During this window Spotify is rebuilding its player
 /// and some AppleScript reads can observe or perturb an incomplete track state.
 enum SpotifyPlaybackStartupGuard {
     static let quietPeriod: TimeInterval = 6.0

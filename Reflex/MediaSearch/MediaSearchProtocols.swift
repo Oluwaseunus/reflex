@@ -3,6 +3,7 @@ import Foundation
 enum MediaItemType: String, Codable {
     case track
     case album
+    case playlist
 }
 
 struct MediaSearchResult: Identifiable, Equatable, Codable {

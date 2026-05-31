@@ -2,6 +2,7 @@ import Foundation
 
 enum SpotifyUserAPIError: Error {
     case notSignedIn
+    case invalidURI(String)
     case tokenExchangeFailed(String)
     case tokenRefreshFailed(String)
     case noActiveDevice
@@ -25,29 +26,34 @@ struct SpotifyUserAPI {
 
     private let session: URLSession = .shared
 
-    /// Three call shapes:
-    /// - `contextURI` only: play that album/playlist/artist from the start.
-    /// - `contextURI` + `trackURI`: play context, starting at that track. This
+    /// Play a Spotify context. If `trackURI` is supplied, playback starts at
+    /// that track within the context. This
     ///   is what native Spotify does when you click a song — the rest of the
     ///   album queues up, then autoplay takes over.
-    /// - `trackURI` only: play exactly that track, no context. Playback stops
-    ///   when the track ends (no autoplay, no queue).
-    func play(contextURI: String? = nil, trackURI: String? = nil, deviceID: String? = nil) async throws {
+    func play(contextURI: String, trackURI: String? = nil, deviceID: String? = nil) async throws {
         var components = URLComponents(string: "https://api.spotify.com/v1/me/player/play")!
         if let deviceID {
             components.queryItems = [URLQueryItem(name: "device_id", value: deviceID)]
         }
-        var body: [String: Any] = [:]
-        if let contextURI, let trackURI {
-            body["context_uri"] = contextURI
+        var body: [String: Any] = ["context_uri": contextURI]
+        if let trackURI {
             body["offset"] = ["uri": trackURI]
-        } else if let contextURI {
-            body["context_uri"] = contextURI
-        } else if let trackURI {
-            body["uris"] = [trackURI]
         }
         let payload = try JSONSerialization.data(withJSONObject: body)
         _ = try await sendJSON(url: components.url!, method: "PUT", body: payload)
+    }
+
+    func albumContextURI(forTrackURI trackURI: String) async throws -> String {
+        guard let id = spotifyID(from: trackURI, expectedType: "track") else {
+            throw SpotifyUserAPIError.invalidURI(trackURI)
+        }
+        let url = URL(string: "https://api.spotify.com/v1/tracks/\(id)")!
+        let data = try await sendJSON(url: url, method: "GET", body: nil)
+        struct Track: Decodable {
+            struct Album: Decodable { let uri: String }
+            let album: Album
+        }
+        return try JSONDecoder().decode(Track.self, from: data).album.uri
     }
 
     func queueTrack(uri: String, deviceID: String? = nil) async throws {
@@ -132,4 +138,22 @@ struct SpotifyUserAPI {
         }
     }
 
+    private func spotifyID(from value: String, expectedType: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let uriPrefix = "spotify:\(expectedType):"
+        if trimmed.hasPrefix(uriPrefix) {
+            let id = String(trimmed.dropFirst(uriPrefix.count))
+                .split(separator: "?")
+                .first
+                .map(String.init) ?? ""
+            return id.isEmpty ? nil : id
+        }
+        guard
+            let components = URLComponents(string: trimmed),
+            components.host == "open.spotify.com"
+        else { return nil }
+        let parts = components.path.split(separator: "/").map(String.init)
+        guard parts.count >= 2, parts[0] == expectedType else { return nil }
+        return parts[1].isEmpty ? nil : parts[1]
+    }
 }
