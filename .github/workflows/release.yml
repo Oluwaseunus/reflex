@@ -18,8 +18,8 @@ jobs:
       LANDING_REPO: Oluwaseunus/reflex-landing-page
       # Job-scoped so every `swift build` step sees the same client id. If
       # scoped to just the first build, the post-accessor-patch rebuild would
-      # invoke the GenerateSpotifySecrets plugin with an empty env var and
-      # overwrite the generated file with an empty client id.
+      # regenerate SpotifySecrets.swift with an empty env var and bake an
+      # empty client id into the binary.
       SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
     steps:
@@ -35,6 +35,8 @@ jobs:
             echo "::error::SPOTIFY_CLIENT_ID secret is not set — release builds must include it or Spotify support will be disabled."
             exit 1
           fi
+          chmod +x Scripts/generate-spotify-secrets.sh
+          Scripts/generate-spotify-secrets.sh
           swift build --configuration release --arch arm64 --arch x86_64
 
       - name: Patch Bundle.module accessors and rebuild

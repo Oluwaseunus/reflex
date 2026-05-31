@@ -22,6 +22,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 APP_NAME="Reflex"
 BUNDLE_ID="com.reflex.app"
 BUILD_DIR=".build/release"
@@ -47,7 +49,8 @@ echo "==> Killing any running instances of $APP_NAME..."
 killall "$APP_NAME" 2>/dev/null || true
 
 # Source local .env so SPOTIFY_CLIENT_ID is exported into swift build's
-# environment. The GenerateSpotifySecrets build-tool plugin reads it and bakes
+# environment. Scripts/generate-spotify-secrets.sh reads it and bakes the value
+# into Reflex/SpotifySecrets.swift before the build.
 # it into the binary. Production/CI builds should export it via the runner's
 # environment instead of using a .env.
 if [ -f ".env" ]; then
@@ -60,6 +63,9 @@ fi
 if [ -z "${SPOTIFY_CLIENT_ID:-}" ]; then
     echo "==> Warning: SPOTIFY_CLIENT_ID not set. Spotify search/playback will be unavailable."
 fi
+
+echo "==> Generating SpotifySecrets.swift..."
+"$SCRIPT_DIR/Scripts/generate-spotify-secrets.sh"
 
 echo "==> Building $APP_NAME in release mode..."
 swift build --configuration release

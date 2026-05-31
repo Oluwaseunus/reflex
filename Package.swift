@@ -18,15 +18,7 @@ let package = Package(
             path: "Reflex",
             resources: [
                 .process("Resources/MediaAppDefinitions.json")
-            ],
-            plugins: [
-                .plugin(name: "GenerateSpotifySecrets")
             ]
-        ),
-        .plugin(
-            name: "GenerateSpotifySecrets",
-            capability: .buildTool(),
-            path: "Plugins/GenerateSpotifySecrets"
         )
     ]
 )
