@@ -16,6 +16,10 @@ let package = Package(
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts")
             ],
             path: "Reflex",
+            exclude: [
+                "Info.plist",
+                "Reflex.entitlements"
+            ],
             resources: [
                 .process("Resources/MediaAppDefinitions.json")
             ]
