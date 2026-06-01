@@ -14,7 +14,7 @@ final class LoopbackCallbackServer {
 
     private var listener: NWListener?
     private var completion: ((Result<URL, CallbackError>) -> Void)?
-    private var timeoutTask: Task<Void, Never>?
+    private var timeoutWorkItem: DispatchWorkItem?
     private var boundPort: UInt16 = 0
     private var expectedState: String = ""
     private let queue = DispatchQueue(label: "com.reflex.app.spotify-auth-callback")
@@ -48,8 +48,8 @@ final class LoopbackCallbackServer {
     }
 
     func stop() {
-        timeoutTask?.cancel()
-        timeoutTask = nil
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
         listener?.cancel()
         listener = nil
         expectedState = ""
@@ -190,13 +190,12 @@ final class LoopbackCallbackServer {
     }
 
     private func scheduleTimeout(_ timeout: TimeInterval) {
-        timeoutTask = Task { [weak self, queue] in
-            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-            if Task.isCancelled { return }
-            // Hop to the listener queue so finish(with:) races against
-            // success/failure deliveries serially, not concurrently.
-            queue.async { self?.finish(with: .failure(.timedOut)) }
+        timeoutWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.finish(with: .failure(.timedOut))
         }
+        timeoutWorkItem = workItem
+        queue.asyncAfter(deadline: .now() + timeout, execute: workItem)
     }
 
     /// Must be called on `queue`. Idempotent: the first result wins, later

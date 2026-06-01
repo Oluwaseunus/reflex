@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 /// Intelligent router that determines which app to send media commands to
 final class SmartRouter: ObservableObject {
@@ -376,9 +377,9 @@ final class SmartRouter: ObservableObject {
             if spotify.supportsNowPlaying {
                 if trackChanged || stateManager.currentArtwork == nil {
                     Task {
-                        if let art = await AppleScriptHelper.getArtwork(from: spotify) {
+                        if let artworkData = await AppleScriptHelper.getArtworkData(from: spotify) {
                             await MainActor.run {
-                                self.stateManager.currentArtwork = art
+                                self.stateManager.currentArtwork = NSImage(data: artworkData)
                             }
                         }
                     }

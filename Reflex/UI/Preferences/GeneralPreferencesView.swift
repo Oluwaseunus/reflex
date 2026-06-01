@@ -82,7 +82,7 @@ struct GeneralPreferencesView: View {
             // System Section
             Section {
                 Toggle("Launch at login", isOn: $preferences.prefs.launchAtLogin)
-                    .onChange(of: preferences.prefs.launchAtLogin) { newValue in
+                    .onChange(of: preferences.prefs.launchAtLogin) { _, newValue in
                         toggleLaunchAtLogin(newValue)
                     }
                     .help("Start Reflex automatically when you log in")

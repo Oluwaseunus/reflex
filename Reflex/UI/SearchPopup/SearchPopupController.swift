@@ -3,7 +3,7 @@ import SwiftUI
 import Combine
 import KeyboardShortcuts
 
-final class SearchPopupController: NSObject {
+final class SearchPopupController: NSObject, @unchecked Sendable {
     static let shared = SearchPopupController()
     /// Height of the search-bar row — matches the padding + content heights in
     /// SearchPopupView's `searchBar` (14 + 28 + 14).
@@ -270,7 +270,9 @@ final class SearchPopupController: NSObject {
             object: panel,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.close(restoreFocus: false) }
+            MainActor.assumeIsolated {
+                self?.close(restoreFocus: false)
+            }
         }
 
         // Close at the *start* of app/space navigation, not at the end. The

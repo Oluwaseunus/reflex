@@ -426,7 +426,7 @@ struct NowPlayingCard: View {
                         loadPlaybackInfo()
                     }
             }
-            .onChange(of: state.isPlaying) { newValue in
+            .onChange(of: state.isPlaying) { _, newValue in
                 // Only adopt external state changes; avoids reverting our
                 // optimistic toggle while stateManager hasn't repolled yet.
                 isPlaying = newValue
@@ -698,7 +698,7 @@ struct HoverMarquee: View {
             .onAppear {
                 containerWidth = available
             }
-            .onChange(of: available) { newValue in
+            .onChange(of: available) { _, newValue in
                 containerWidth = newValue
                 reset()
             }

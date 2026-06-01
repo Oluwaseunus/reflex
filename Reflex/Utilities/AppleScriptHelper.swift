@@ -306,8 +306,8 @@ final class AppleScriptHelper {
         return Double(output)
     }
 
-    /// Get album artwork image asynchronously
-    static func getArtwork(from app: MediaApp) async -> NSImage? {
+    /// Get album artwork bytes asynchronously.
+    static func getArtworkData(from app: MediaApp) async -> Data? {
         switch app.bundleIdentifier {
         case "com.spotify.client":
             if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
@@ -326,7 +326,7 @@ final class AppleScriptHelper {
             }
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
-                return NSImage(data: data)
+                return data
             } catch {
                 Logger.shared.appleScriptError("Failed to fetch Spotify artwork: \(error)", script: "")
                 return nil
@@ -348,8 +348,7 @@ final class AppleScriptHelper {
             var errorDict: NSDictionary?
             let output = appleScript?.executeAndReturnError(&errorDict)
             if errorDict != nil { return nil }
-            guard let data = output?.data else { return nil }
-            return NSImage(data: data)
+            return output?.data
 
         default:
             return nil
