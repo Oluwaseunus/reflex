@@ -62,8 +62,10 @@ final class SpotifyAuthManager: ObservableObject {
             expectedState: state,
             timeout: 300,
             completion: { [weak self, weak server] result in
+                guard let self else { return }
+                let callbackServer = server
                 Task { @MainActor in
-                    self?.handleListenerResult(result, from: server)
+                    self.handleListenerResult(result, from: callbackServer)
                 }
             }
         )

@@ -28,7 +28,8 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
 
     func registerHotkey() {
         KeyboardShortcuts.onKeyDown(for: .openSpotifySearch) { [weak self] in
-            Task { @MainActor in self?.open() }
+            guard let self else { return }
+            Task { @MainActor in self.open() }
         }
     }
 
@@ -160,7 +161,8 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
         vm.$state
             .dropFirst()
             .sink { [weak self] _ in
-                DispatchQueue.main.async { self?.updatePanelSize() }
+                guard let self else { return }
+                Task { @MainActor in self.updatePanelSize() }
             }
             .store(in: &cancellables)
 
@@ -218,7 +220,8 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            Task { @MainActor in self?.close(restoreFocus: false) }
+            guard let self else { return }
+            Task { @MainActor in self.close(restoreFocus: false) }
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(
@@ -288,7 +291,8 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
             // Ctrl+Left (123) / Ctrl+Right (124): Space switching.
             let isSpaceSwitch = flags.contains(.control) && (code == 123 || code == 124)
             if isAppSwitch || isSpaceSwitch {
-                Task { @MainActor in self?.close(restoreFocus: false) }
+                guard let self else { return }
+                Task { @MainActor in self.close(restoreFocus: false) }
             }
         }
     }

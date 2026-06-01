@@ -58,7 +58,8 @@ final class SearchViewModel: ObservableObject {
         toastTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
             if Task.isCancelled { return }
-            await MainActor.run { self?.toast = nil }
+            guard let self else { return }
+            await MainActor.run { self.toast = nil }
         }
     }
 
