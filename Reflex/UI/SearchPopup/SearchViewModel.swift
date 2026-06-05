@@ -52,14 +52,20 @@ final class SearchViewModel: ObservableObject {
         state = loadRecents ? idleState() : .idle
     }
 
-    private func showToast(_ message: String, duration: TimeInterval = 1.6) {
+    private func showToast(_ message: String, duration: TimeInterval = 1.6, closeAfterToast: Bool = false) {
         toastTask?.cancel()
         toast = message
         toastTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
             if Task.isCancelled { return }
             guard let self else { return }
-            await MainActor.run { self.toast = nil }
+            await MainActor.run {
+                if closeAfterToast {
+                    SearchPopupController.shared.close(restoreFocus: true)
+                } else {
+                    self.toast = nil
+                }
+            }
         }
     }
 
@@ -134,13 +140,11 @@ final class SearchViewModel: ObservableObject {
     private func play(item: MediaSearchResult) {
         guard !isPlaybackRequestInFlight else { return }
         isPlaybackRequestInFlight = true
+        SearchPopupController.shared.closeAfterPlayback()
         Task {
             do {
                 try await playback.play(item: item)
                 self.recents.record(item)
-                await MainActor.run {
-                    SearchPopupController.shared.closeAfterPlayback()
-                }
             } catch MediaPlaybackError.playerNotRunning {
                 await MainActor.run {
                     self.isPlaybackRequestInFlight = false
@@ -172,8 +176,7 @@ final class SearchViewModel: ObservableObject {
 
     /// Queue the currently-selected track. Requires sign-in; silently ignored
     /// for non-track results (Web API's queue endpoint only accepts single tracks).
-    /// Unlike play, queue keeps the popup open so the user can queue multiple
-    /// tracks in a row — confirmation comes via a transient toast.
+    /// Queue keeps the popup open long enough to show confirmation, then closes.
     func onCommandEnterPressed() {
         guard let item = currentItem(), item.type == .track else { return }
         let provider = playback as? SpotifyPlaybackProvider
@@ -182,7 +185,7 @@ final class SearchViewModel: ObservableObject {
             do {
                 try await provider.queue(uri: item.playbackURI)
                 await MainActor.run {
-                    self.showToast("Added \(item.title) to queue")
+                    self.showToast("Added \(item.title) to queue", closeAfterToast: true)
                 }
             } catch MediaPlaybackError.playerNotRunning {
                 await MainActor.run { self.state = .error(.playerNotRunning) }
