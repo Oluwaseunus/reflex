@@ -324,13 +324,7 @@ final class AppleScriptHelper {
                   let url = URL(string: urlString) else {
                 return nil
             }
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                return data
-            } catch {
-                Logger.shared.appleScriptError("Failed to fetch Spotify artwork: \(error)", script: "")
-                return nil
-            }
+            return await ArtworkDataCache.shared.data(for: url)
 
         case "com.apple.Music":
             let script = """
