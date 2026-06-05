@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 
 /// Main popover view shown when clicking the status bar icon
 struct StatusBarView: View {
@@ -7,8 +8,11 @@ struct StatusBarView: View {
     @EnvironmentObject var preferences: PreferencesManager
     @EnvironmentObject var router: SmartRouter
     @ObservedObject private var accessibilityManager = AccessibilityManager.shared
+    @ObservedObject private var spotifyAuth = SpotifyAuthManager.shared
 
     @State private var showingPreferences = false
+    @State private var queueExpanded = false
+    @State private var queueTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +34,23 @@ struct StatusBarView: View {
             actionsSection
         }
         .frame(width: 320)
+        .onAppear {
+            refreshSpotifyQueue()
+        }
+        .onDisappear {
+            queueTask?.cancel()
+        }
+        .onChange(of: stateManager.currentState?.trackKey) { _, _ in
+            refreshSpotifyQueue(force: true)
+        }
+        .onChange(of: spotifyAuth.isSignedIn) { _, signedIn in
+            if signedIn {
+                refreshSpotifyQueue(force: true)
+            } else {
+                queueExpanded = false
+                stateManager.updateSpotifyQueue([])
+            }
+        }
     }
 
     // MARK: - Header
@@ -96,6 +117,10 @@ struct StatusBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 0) {
+            queueActionSection
+
+            Divider()
+
             Button(action: {
                 NotificationCenter.default.post(name: Notification.Name("openPreferences"), object: nil)
             }) {
@@ -135,6 +160,202 @@ struct StatusBarView: View {
             .padding(.vertical, 8)
         }
         .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
+    }
+
+    private var queueActionSection: some View {
+        VStack(spacing: 0) {
+            Button(action: toggleQueue) {
+                HStack {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 11))
+                    Text(queueExpanded ? "Hide Queue" : "Show Queue")
+                        .font(.system(size: 13))
+                    Spacer()
+                    if stateManager.isSpotifyQueueLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.55)
+                            .frame(width: 14, height: 14)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(queueButtonDisabled ? .secondary : .primary)
+            .focusable(false)
+            .disabled(queueButtonDisabled)
+            .help(queueHelpText)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            if queueExpanded {
+                queueItemsSection
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var queueItemsSection: some View {
+        if stateManager.isSpotifyQueueLoading &&
+            stateManager.spotifyQueueItems.isEmpty {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.65)
+                Text("Loading Queue")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(stateManager.spotifyQueueItems.prefix(5).enumerated()), id: \.offset) { _, item in
+                    QueueItemRow(item: item, onOpenSpotify: openSpotifyApp)
+                }
+            }
+        }
+    }
+
+    private var queueButtonDisabled: Bool {
+        if !spotifyAuth.isSignedIn { return true }
+        if stateManager.isSpotifyQueueLoading { return false }
+        return stateManager.spotifyQueueItems.isEmpty
+    }
+
+    private var queueHelpText: String {
+        if !spotifyAuth.isSignedIn {
+            return "Connect Spotify to show queue"
+        }
+        if let error = stateManager.spotifyQueueError {
+            return error
+        }
+        if stateManager.spotifyQueueItems.isEmpty {
+            return "No items in queue"
+        }
+        return queueExpanded ? "Hide queue" : "Show queue"
+    }
+
+    private func toggleQueue() {
+        if queueExpanded {
+            queueExpanded = false
+        } else {
+            queueExpanded = true
+            refreshSpotifyQueue(force: true)
+        }
+    }
+
+    private func refreshSpotifyQueue(force: Bool = false) {
+        guard spotifyAuth.isSignedIn else {
+            stateManager.updateSpotifyQueue([])
+            return
+        }
+        if !force,
+           let lastUpdate = stateManager.spotifyQueueLastUpdate,
+           Date().timeIntervalSince(lastUpdate) < 8 {
+            return
+        }
+
+        queueTask?.cancel()
+        stateManager.setSpotifyQueueLoading()
+        queueTask = Task {
+            do {
+                let items = try await SpotifyUserAPI.shared.currentQueue(limit: 5)
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    stateManager.updateSpotifyQueue(items)
+                    if items.isEmpty {
+                        queueExpanded = false
+                    }
+                }
+            } catch {
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    stateManager.updateSpotifyQueue([], error: queueErrorMessage(error))
+                    queueExpanded = false
+                }
+            }
+        }
+    }
+
+    private func queueErrorMessage(_ error: Error) -> String {
+        switch error {
+        case SpotifyUserAPIError.notSignedIn:
+            return "Connect Spotify to show queue"
+        case SpotifyUserAPIError.rateLimited:
+            return "Spotify is rate limiting queue updates"
+        case SpotifyUserAPIError.network:
+            return "Could not load Spotify queue"
+        case SpotifyUserAPIError.httpStatus(403, _):
+            return "Reconnect Spotify to grant queue access"
+        default:
+            return "Could not load Spotify queue"
+        }
+    }
+
+    private func openSpotifyApp() {
+        let bundleID = "com.spotify.client"
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            app.activate()
+            return
+        }
+
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        config.addsToRecentItems = false
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { app, _ in
+            app?.activate()
+        }
+    }
+}
+
+private struct QueueItemRow: View {
+    let item: SpotifyQueueItem
+    var onOpenSpotify: () -> Void
+
+    var body: some View {
+        Button(action: onOpenSpotify) {
+            HStack(spacing: 10) {
+                artwork
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text(item.artistName)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Open Spotify")
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let url = item.artworkURL {
+            CachedArtworkImage(url: url) {
+                Color.secondary.opacity(0.2)
+            }
+            .frame(width: 34, height: 34)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        } else {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(Color.secondary.opacity(0.2))
+                .frame(width: 34, height: 34)
+        }
     }
 }
 
@@ -756,14 +977,17 @@ struct VisualEffectBlur: NSViewRepresentable {
 #if DEBUG
 struct StatusBarView_Previews: PreviewProvider {
     static var previews: some View {
+        let appDetector = MediaAppDetector()
+        let stateManager = PlaybackStateManager()
+
         StatusBarView()
-            .environmentObject(PlaybackStateManager())
+            .environmentObject(stateManager)
             .environmentObject(PreferencesManager.shared)
             .environmentObject(SmartRouter(
-                appDetector: MediaAppDetector(),
+                appDetector: appDetector,
                 commandSender: MediaCommandSender(),
                 preferences: PreferencesManager.shared,
-                stateManager: PlaybackStateManager()
+                stateManager: stateManager
             ))
     }
 }

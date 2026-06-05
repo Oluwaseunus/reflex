@@ -258,13 +258,8 @@ private struct ResultRow: View {
     @ViewBuilder
     private var artwork: some View {
         if let url = result.artworkURL {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fill)
-                default:
-                    Color.secondary.opacity(0.2)
-                }
+            CachedArtworkImage(url: url) {
+                Color.secondary.opacity(0.2)
             }
             .frame(width: 40, height: 40)
             .clipShape(RoundedRectangle(cornerRadius: 4))

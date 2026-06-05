@@ -77,7 +77,7 @@ enum Constants {
         static func redirectURI(forPort port: UInt16) -> String {
             "http://127.0.0.1:\(port)\(callbackPath)"
         }
-        /// Scopes required to control playback and read device state.
-        static let userScopes = "user-modify-playback-state user-read-playback-state"
+        /// Scopes required to control playback and read player/queue state.
+        static let userScopes = "user-modify-playback-state user-read-playback-state user-read-currently-playing"
     }
 }

@@ -12,6 +12,14 @@ enum SpotifyUserAPIError: Error {
     case httpStatus(Int, String)
 }
 
+struct SpotifyQueueItem: Equatable {
+    let id: String
+    let title: String
+    let artistName: String
+    let albumName: String?
+    let artworkURL: URL?
+}
+
 struct SpotifyDevice: Decodable {
     let id: String?
     let is_active: Bool
@@ -64,6 +72,13 @@ struct SpotifyUserAPI {
         }
         components.queryItems = items
         _ = try await sendJSON(url: components.url!, method: "POST", body: nil)
+    }
+
+    func currentQueue(limit: Int = 5) async throws -> [SpotifyQueueItem] {
+        let url = URL(string: "https://api.spotify.com/v1/me/player/queue")!
+        let data = try await sendJSON(url: url, method: "GET", body: nil)
+        let decoded = try JSONDecoder().decode(QueueResponse.self, from: data)
+        return Array(decoded.queue.compactMap { SpotifyQueueItem($0) }.prefix(limit))
     }
 
     func devices() async throws -> [SpotifyDevice] {
@@ -155,5 +170,60 @@ struct SpotifyUserAPI {
         let parts = components.path.split(separator: "/").map(String.init)
         guard parts.count >= 2, parts[0] == expectedType else { return nil }
         return parts[1].isEmpty ? nil : parts[1]
+    }
+
+    fileprivate struct QueueResponse: Decodable {
+        let queue: [QueueObject]
+    }
+
+    fileprivate struct QueueObject: Decodable {
+        let id: String?
+        let name: String
+        let uri: String?
+        let type: String?
+        let artists: [ArtistRef]?
+        let album: AlbumRef?
+    }
+
+    fileprivate struct ArtistRef: Decodable {
+        let name: String
+    }
+
+    fileprivate struct AlbumRef: Decodable {
+        let name: String?
+        let images: [SpotifyImage]?
+    }
+}
+
+private extension SpotifyQueueItem {
+    init?(_ item: SpotifyUserAPI.QueueObject) {
+        guard item.type == "track" else {
+            return nil
+        }
+
+        let fallbackID = item.uri.flatMap { SpotifyQueueItem.spotifyID(from: $0) }
+        guard let id = item.id ?? fallbackID else {
+            return nil
+        }
+
+        let artistName = item.artists?.first?.name ?? "Unknown Artist"
+        self.id = "queue:\(id)"
+        self.title = item.name
+        self.artistName = artistName
+        self.albumName = item.album?.name
+        self.artworkURL = SpotifyQueueItem.smallestImageURL(item.album?.images ?? [])
+    }
+
+    private static func spotifyID(from uri: String) -> String? {
+        let prefix = "spotify:track:"
+        guard uri.hasPrefix(prefix) else { return nil }
+        let id = String(uri.dropFirst(prefix.count))
+        return id.isEmpty ? nil : id
+    }
+
+    private static func smallestImageURL(_ images: [SpotifyImage]) -> URL? {
+        guard !images.isEmpty else { return nil }
+        let sorted = images.sorted { ($0.width ?? .max) < ($1.width ?? .max) }
+        return sorted.first.flatMap { URL(string: $0.url) }
     }
 }
