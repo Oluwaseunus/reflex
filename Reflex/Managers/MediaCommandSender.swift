@@ -43,8 +43,8 @@ final class MediaCommandSender {
             name: Constants.Notifications.commandSent,
             object: nil,
             userInfo: [
-                "command": command,
-                "app": app
+                Constants.NotificationUserInfo.mediaCommand: command,
+                Constants.NotificationUserInfo.mediaApp: app
             ]
         )
     }

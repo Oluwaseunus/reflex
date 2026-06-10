@@ -64,4 +64,13 @@ enum MediaCommand: String, CaseIterable {
         case .stop: return "stop.fill"
         }
     }
+
+    var shouldRefreshSpotifyStateAfterSending: Bool {
+        switch self {
+        case .nextTrack, .previousTrack:
+            return true
+        default:
+            return false
+        }
+    }
 }
