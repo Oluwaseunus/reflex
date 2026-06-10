@@ -20,6 +20,11 @@ struct SpotifyQueueItem: Equatable {
     let artworkURL: URL?
 }
 
+struct SpotifyQueueSnapshot: Equatable {
+    let currentlyPlaying: SpotifyQueueItem?
+    let items: [SpotifyQueueItem]
+}
+
 struct SpotifyDevice: Decodable {
     let id: String?
     let is_active: Bool
@@ -75,10 +80,17 @@ struct SpotifyUserAPI {
     }
 
     func currentQueue(limit: Int = 5) async throws -> [SpotifyQueueItem] {
+        try await currentQueueSnapshot(limit: limit).items
+    }
+
+    func currentQueueSnapshot(limit: Int = 5) async throws -> SpotifyQueueSnapshot {
         let url = URL(string: "https://api.spotify.com/v1/me/player/queue")!
         let data = try await sendJSON(url: url, method: "GET", body: nil)
         let decoded = try JSONDecoder().decode(QueueResponse.self, from: data)
-        return Array(decoded.queue.compactMap { SpotifyQueueItem($0) }.prefix(limit))
+        return SpotifyQueueSnapshot(
+            currentlyPlaying: decoded.currently_playing.flatMap { SpotifyQueueItem($0) },
+            items: Array(decoded.queue.compactMap { SpotifyQueueItem($0) }.prefix(limit))
+        )
     }
 
     func devices() async throws -> [SpotifyDevice] {
@@ -173,6 +185,7 @@ struct SpotifyUserAPI {
     }
 
     fileprivate struct QueueResponse: Decodable {
+        let currently_playing: QueueObject?
         let queue: [QueueObject]
     }
 

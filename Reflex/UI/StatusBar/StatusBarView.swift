@@ -13,6 +13,14 @@ struct StatusBarView: View {
     @State private var showingPreferences = false
     @State private var queueExpanded = false
     @State private var queueTask: Task<Void, Never>?
+    @State private var delayedQueueRefreshTask: Task<Void, Never>?
+
+    private struct ExpectedSpotifyTrack: Sendable {
+        let title: String
+        let artistName: String?
+    }
+
+    private struct SpotifyQueueOutOfSyncError: Error {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,17 +47,22 @@ struct StatusBarView: View {
         }
         .onDisappear {
             queueTask?.cancel()
+            delayedQueueRefreshTask?.cancel()
         }
         .onChange(of: stateManager.currentState?.trackKey) { _, _ in
-            refreshSpotifyQueue(force: true)
+            scheduleSpotifyQueueRefresh(force: true, delay: 0.5)
         }
         .onChange(of: spotifyAuth.isSignedIn) { _, signedIn in
             if signedIn {
                 refreshSpotifyQueue(force: true)
             } else {
+                delayedQueueRefreshTask?.cancel()
                 queueExpanded = false
                 stateManager.updateSpotifyQueue([])
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.commandSent)) { notification in
+            handleCommandSent(notification)
         }
     }
 
@@ -212,8 +225,12 @@ struct StatusBarView: View {
             .padding(.vertical, 8)
         } else {
             VStack(spacing: 0) {
-                ForEach(Array(stateManager.spotifyQueueItems.prefix(5).enumerated()), id: \.offset) { _, item in
+                let visibleItems = Array(stateManager.spotifyQueueItems.prefix(5))
+                ForEach(Array(visibleItems.enumerated()), id: \.offset) { _, item in
                     QueueItemRow(item: item, onOpenSpotify: openSpotifyApp)
+                }
+                if !visibleItems.isEmpty && visibleItems.count < 5 {
+                    QueueEndOfReadableQueueRow()
                 }
             }
         }
@@ -247,6 +264,43 @@ struct StatusBarView: View {
         }
     }
 
+    private func handleCommandSent(_ notification: Notification) {
+        guard let command = notification.userInfo?[Constants.NotificationUserInfo.mediaCommand] as? MediaCommand,
+              command.shouldRefreshSpotifyStateAfterSending,
+              let app = notification.userInfo?[Constants.NotificationUserInfo.mediaApp] as? MediaApp,
+              app.bundleIdentifier == "com.spotify.client" else {
+            return
+        }
+
+        scheduleSpotifyQueueRefresh(force: true, delay: 1.25)
+    }
+
+    private func scheduleSpotifyQueueRefresh(force: Bool = false, delay: TimeInterval) {
+        delayedQueueRefreshTask?.cancel()
+        guard delay > 0 else {
+            refreshSpotifyQueue(force: force)
+            return
+        }
+
+        queueTask?.cancel()
+        if spotifyAuth.isSignedIn {
+            stateManager.setSpotifyQueueLoading()
+        }
+
+        delayedQueueRefreshTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            if Task.isCancelled { return }
+            await MainActor.run {
+                delayedQueueRefreshTask = nil
+                refreshSpotifyQueue(force: force)
+            }
+        }
+    }
+
     private func refreshSpotifyQueue(force: Bool = false) {
         guard spotifyAuth.isSignedIn else {
             stateManager.updateSpotifyQueue([])
@@ -260,13 +314,14 @@ struct StatusBarView: View {
 
         queueTask?.cancel()
         stateManager.setSpotifyQueueLoading()
+        let expectedTrack = expectedSpotifyTrack()
         queueTask = Task {
             do {
-                let items = try await SpotifyUserAPI.shared.currentQueue(limit: 5)
+                let snapshot = try await currentQueueSnapshot(limit: 5, matching: expectedTrack)
                 if Task.isCancelled { return }
                 await MainActor.run {
-                    stateManager.updateSpotifyQueue(items)
-                    if items.isEmpty {
+                    stateManager.updateSpotifyQueue(snapshot.items)
+                    if snapshot.items.isEmpty {
                         queueExpanded = false
                     }
                 }
@@ -280,6 +335,65 @@ struct StatusBarView: View {
         }
     }
 
+    private func currentQueueSnapshot(limit: Int, matching expectedTrack: ExpectedSpotifyTrack?) async throws -> SpotifyQueueSnapshot {
+        var latestSnapshot: SpotifyQueueSnapshot?
+        let retryDelays: [UInt64] = [0, 600_000_000, 900_000_000, 1_200_000_000]
+
+        for delay in retryDelays {
+            if delay > 0 {
+                try await Task.sleep(nanoseconds: delay)
+            }
+
+            let snapshot = try await SpotifyUserAPI.shared.currentQueueSnapshot(limit: limit)
+            latestSnapshot = snapshot
+
+            if spotifyQueueSnapshot(snapshot, matches: expectedTrack) {
+                return snapshot
+            }
+        }
+
+        if let latestSnapshot, expectedTrack == nil {
+            return latestSnapshot
+        }
+        throw SpotifyQueueOutOfSyncError()
+    }
+
+    private func expectedSpotifyTrack() -> ExpectedSpotifyTrack? {
+        guard let state = stateManager.currentState,
+              state.app?.bundleIdentifier == "com.spotify.client",
+              let title = state.trackName,
+              !title.isEmpty else {
+            return nil
+        }
+
+        return ExpectedSpotifyTrack(title: title, artistName: state.artistName)
+    }
+
+    private func spotifyQueueSnapshot(_ snapshot: SpotifyQueueSnapshot, matches expectedTrack: ExpectedSpotifyTrack?) -> Bool {
+        guard let expectedTrack else { return true }
+        guard let currentlyPlaying = snapshot.currentlyPlaying else { return false }
+
+        let expectedTitle = normalizedSpotifyText(expectedTrack.title)
+        let actualTitle = normalizedSpotifyText(currentlyPlaying.title)
+        guard expectedTitle == actualTitle else { return false }
+
+        guard let expectedArtist = expectedTrack.artistName,
+              !expectedArtist.isEmpty else {
+            return true
+        }
+
+        let normalizedExpectedArtist = normalizedSpotifyText(expectedArtist)
+        let normalizedActualArtist = normalizedSpotifyText(currentlyPlaying.artistName)
+        return normalizedExpectedArtist == normalizedActualArtist ||
+            normalizedExpectedArtist.contains(normalizedActualArtist) ||
+            normalizedActualArtist.contains(normalizedExpectedArtist)
+    }
+
+    private func normalizedSpotifyText(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
     private func queueErrorMessage(_ error: Error) -> String {
         switch error {
         case SpotifyUserAPIError.notSignedIn:
@@ -290,6 +404,8 @@ struct StatusBarView: View {
             return "Could not load Spotify queue"
         case SpotifyUserAPIError.httpStatus(403, _):
             return "Reconnect Spotify to grant queue access"
+        case is SpotifyQueueOutOfSyncError:
+            return "Spotify queue is still updating"
         default:
             return "Could not load Spotify queue"
         }
@@ -356,6 +472,34 @@ private struct QueueItemRow: View {
                 .fill(Color.secondary.opacity(0.2))
                 .frame(width: 34, height: 34)
         }
+    }
+}
+
+private struct QueueEndOfReadableQueueRow: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(
+                    Color.secondary.opacity(0.18),
+                    style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                )
+                .frame(width: 34, height: 34)
+                .overlay {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary.opacity(0.55))
+                }
+
+            Text("End of readable queue")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary.opacity(0.7))
+                .lineLimit(1)
+
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .accessibilityLabel("End of readable queue")
     }
 }
 

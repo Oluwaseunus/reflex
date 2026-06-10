@@ -14,6 +14,8 @@ enum Constants {
 
     enum NotificationUserInfo {
         static let spotifyPlaybackItem = "spotifyPlaybackItem"
+        static let mediaCommand = "command"
+        static let mediaApp = "app"
     }
 
     /// UserDefaults keys

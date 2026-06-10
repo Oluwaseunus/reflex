@@ -21,6 +21,7 @@ final class SmartRouter: ObservableObject {
 
     private var pollingTimer: Timer?
     private var startupPollTimer: Timer?
+    private var postCommandPollWorkItem: DispatchWorkItem?
     private var suppressSpotifyPollingUntil: Date?
     private var cancellables = Set<AnyCancellable>()
     private let spotifyStartupPollQuietPeriod = SpotifyPlaybackStartupGuard.quietPeriod
@@ -156,6 +157,11 @@ final class SmartRouter: ObservableObject {
             preferences.setLastUsedApp(targetApp.id)
             activeApp = targetApp
 
+            if targetApp.bundleIdentifier == spotifyBundleId,
+               command.shouldRefreshSpotifyStateAfterSending {
+                scheduleSpotifyPostCommandRefresh()
+            }
+
             NotificationCenter.default.post(
                 name: Constants.Notifications.activeAppChanged,
                 object: targetApp
@@ -164,6 +170,16 @@ final class SmartRouter: ObservableObject {
 
         // We handled the key (found a target), even if sending failed
         return true
+    }
+
+    private func scheduleSpotifyPostCommandRefresh() {
+        postCommandPollWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.refreshSpotifyPlaybackState(reason: "post media command")
+            self?.postCommandPollWorkItem = nil
+        }
+        postCommandPollWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: workItem)
     }
 
     /// Determine which app should receive the next command (Spotify-first, no quick switch)
@@ -327,6 +343,8 @@ final class SmartRouter: ObservableObject {
         pollingTimer = nil
         startupPollTimer?.invalidate()
         startupPollTimer = nil
+        postCommandPollWorkItem?.cancel()
+        postCommandPollWorkItem = nil
         suppressSpotifyPollingUntil = nil
         isPolling = false
         Logger.shared.info("Stopped playback state polling")
