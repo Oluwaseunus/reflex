@@ -48,6 +48,7 @@ final class RecentPlaysStore {
         let playbackURI: String
         let contextURI: String?
         let artistName: String?
+        let artistURI: String?
         let albumName: String?
 
         init(item: MediaSearchResult) {
@@ -59,6 +60,7 @@ final class RecentPlaysStore {
             playbackURI = item.playbackURI
             contextURI = item.contextURI
             artistName = item.artistName
+            artistURI = item.artistURI
             albumName = item.albumName
         }
 
@@ -72,6 +74,7 @@ final class RecentPlaysStore {
             artworkURL = (try? container.decodeIfPresent(URL.self, forKey: .artworkURL)) ?? nil
             contextURI = (try? container.decodeIfPresent(String.self, forKey: .contextURI)) ?? nil
             artistName = (try? container.decodeIfPresent(String.self, forKey: .artistName)) ?? nil
+            artistURI = (try? container.decodeIfPresent(String.self, forKey: .artistURI)) ?? nil
             albumName = (try? container.decodeIfPresent(String.self, forKey: .albumName)) ?? nil
         }
 
@@ -86,6 +89,7 @@ final class RecentPlaysStore {
                 playbackURI: playbackURI,
                 contextURI: contextURI,
                 artistName: artistName,
+                artistURI: artistURI,
                 albumName: albumName
             )
         }

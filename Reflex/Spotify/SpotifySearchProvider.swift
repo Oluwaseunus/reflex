@@ -82,7 +82,8 @@ final class SpotifySearchProvider: MediaSearchProvider {
         do {
             let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
             let tracks = (decoded.tracks?.items ?? []).prefix(3).map { item in
-                let primaryArtist = item.artists.first?.name ?? ""
+                let primaryArtistRef = item.artists.first
+                let primaryArtist = primaryArtistRef?.name ?? ""
                 let subtitle = "\(primaryArtist) • \(item.album.name)"
                 return MediaSearchResult(
                     id: "track:\(item.id)",
@@ -93,11 +94,13 @@ final class SpotifySearchProvider: MediaSearchProvider {
                     playbackURI: item.uri,
                     contextURI: item.album.uri,
                     artistName: primaryArtist.isEmpty ? nil : primaryArtist,
+                    artistURI: primaryArtistRef?.uri,
                     albumName: item.album.name
                 )
             }
             let albums = (decoded.albums?.items ?? []).prefix(2).map { item in
-                let primaryArtist = item.artists.first?.name ?? ""
+                let primaryArtistRef = item.artists.first
+                let primaryArtist = primaryArtistRef?.name ?? ""
                 return MediaSearchResult(
                     id: "album:\(item.id)",
                     title: item.name,
@@ -107,6 +110,7 @@ final class SpotifySearchProvider: MediaSearchProvider {
                     playbackURI: item.uri,
                     contextURI: nil,
                     artistName: primaryArtist.isEmpty ? nil : primaryArtist,
+                    artistURI: primaryArtistRef?.uri,
                     albumName: nil
                 )
             }
@@ -152,6 +156,7 @@ final class SpotifySearchProvider: MediaSearchProvider {
     }
     private struct ArtistRef: Decodable {
         let name: String
+        let uri: String?
     }
 }
 

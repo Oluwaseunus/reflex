@@ -19,8 +19,37 @@ struct PlaybackState {
     /// Current album name (if available)
     let albumName: String?
 
+    /// Spotify URI for the current track, when known.
+    let spotifyTrackURI: String?
+
+    /// Spotify URI for the current track's album, when known.
+    let spotifyAlbumURI: String?
+
+    /// Spotify URI for the current track's primary artist, when known.
+    let spotifyArtistURI: String?
+
     /// When this state was captured
     let timestamp: Date
+
+    init(app: MediaApp?,
+         isPlaying: Bool,
+         trackName: String?,
+         artistName: String?,
+         albumName: String?,
+         spotifyTrackURI: String? = nil,
+         spotifyAlbumURI: String? = nil,
+         spotifyArtistURI: String? = nil,
+         timestamp: Date) {
+        self.app = app
+        self.isPlaying = isPlaying
+        self.trackName = trackName
+        self.artistName = artistName
+        self.albumName = albumName
+        self.spotifyTrackURI = spotifyTrackURI
+        self.spotifyAlbumURI = spotifyAlbumURI
+        self.spotifyArtistURI = spotifyArtistURI
+        self.timestamp = timestamp
+    }
 
     /// Stable identity key for this track (used for dismiss/change detection)
     var trackKey: String {

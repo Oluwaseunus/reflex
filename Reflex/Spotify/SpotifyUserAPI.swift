@@ -27,6 +27,21 @@ struct SpotifyDevice: Decodable {
     let type: String
 }
 
+enum SpotifyRepeatMode: String {
+    case track
+    case context
+    case off
+}
+
+struct SpotifyTrackContext {
+    let albumURI: String
+    let artistURI: String?
+}
+
+struct SpotifyPlaybackSnapshot {
+    let shuffleState: Bool
+}
+
 /// User-scoped Web API client. Uses a token from SpotifyAuthManager and
 /// refreshes transparently on 401.
 struct SpotifyUserAPI {
@@ -52,6 +67,10 @@ struct SpotifyUserAPI {
     }
 
     func albumContextURI(forTrackURI trackURI: String) async throws -> String {
+        try await trackContext(forTrackURI: trackURI).albumURI
+    }
+
+    func trackContext(forTrackURI trackURI: String) async throws -> SpotifyTrackContext {
         guard let id = spotifyID(from: trackURI, expectedType: "track") else {
             throw SpotifyUserAPIError.invalidURI(trackURI)
         }
@@ -59,9 +78,15 @@ struct SpotifyUserAPI {
         let data = try await sendJSON(url: url, method: "GET", body: nil)
         struct Track: Decodable {
             struct Album: Decodable { let uri: String }
+            struct Artist: Decodable { let uri: String? }
             let album: Album
+            let artists: [Artist]
         }
-        return try JSONDecoder().decode(Track.self, from: data).album.uri
+        let track = try JSONDecoder().decode(Track.self, from: data)
+        return SpotifyTrackContext(
+            albumURI: track.album.uri,
+            artistURI: track.artists.first?.uri
+        )
     }
 
     func queueTrack(uri: String, deviceID: String? = nil) async throws {
@@ -72,6 +97,53 @@ struct SpotifyUserAPI {
         }
         components.queryItems = items
         _ = try await sendJSON(url: components.url!, method: "POST", body: nil)
+    }
+
+    func setRepeatMode(_ repeatMode: SpotifyRepeatMode, deviceID: String? = nil) async throws {
+        var components = URLComponents(string: "https://api.spotify.com/v1/me/player/repeat")!
+        var items = [URLQueryItem(name: "state", value: repeatMode.rawValue)]
+        if let deviceID {
+            items.append(URLQueryItem(name: "device_id", value: deviceID))
+        }
+        components.queryItems = items
+        _ = try await sendJSON(url: components.url!, method: "PUT", body: nil)
+    }
+
+    func seek(toPositionMs positionMs: Int, deviceID: String? = nil) async throws {
+        var components = URLComponents(string: "https://api.spotify.com/v1/me/player/seek")!
+        var items = [URLQueryItem(name: "position_ms", value: String(max(positionMs, 0)))]
+        if let deviceID {
+            items.append(URLQueryItem(name: "device_id", value: deviceID))
+        }
+        components.queryItems = items
+        _ = try await sendJSON(url: components.url!, method: "PUT", body: nil)
+    }
+
+    func setShuffle(_ enabled: Bool, deviceID: String? = nil) async throws {
+        var components = URLComponents(string: "https://api.spotify.com/v1/me/player/shuffle")!
+        var items = [URLQueryItem(name: "state", value: enabled ? "true" : "false")]
+        if let deviceID {
+            items.append(URLQueryItem(name: "device_id", value: deviceID))
+        }
+        components.queryItems = items
+        _ = try await sendJSON(url: components.url!, method: "PUT", body: nil)
+    }
+
+    func playbackState() async throws -> SpotifyPlaybackSnapshot? {
+        let url = URL(string: "https://api.spotify.com/v1/me/player")!
+        let data = try await sendJSON(url: url, method: "GET", body: nil)
+        guard !data.isEmpty else { return nil }
+
+        struct PlaybackResponse: Decodable {
+            let shuffleState: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case shuffleState = "shuffle_state"
+            }
+        }
+
+        let decoded = try JSONDecoder().decode(PlaybackResponse.self, from: data)
+        return SpotifyPlaybackSnapshot(shuffleState: decoded.shuffleState)
     }
 
     func currentQueue(limit: Int = 5) async throws -> [SpotifyQueueItem] {

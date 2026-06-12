@@ -18,6 +18,7 @@ struct MediaSearchResult: Identifiable, Equatable, Codable {
     /// behavior — plays this item then continues through the container.
     let contextURI: String?
     let artistName: String?
+    let artistURI: String?
     let albumName: String?
 }
 
