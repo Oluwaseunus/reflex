@@ -201,12 +201,25 @@ private struct ResultsListView: View {
     let selectedIndex: Int
     let highlightStyle: SearchHighlightStyle
     var onTap: (Int) -> Void
+    @State private var hoveredID: MediaSearchResult.ID?
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(results.enumerated()), id: \.element.id) { idx, item in
-                ResultRow(result: item, isSelected: idx == selectedIndex, highlightStyle: highlightStyle)
+                ResultRow(
+                    result: item,
+                    isHighlighted: idx == selectedIndex || hoveredID == item.id,
+                    highlightStyle: highlightStyle
+                )
                     .contentShape(Rectangle())
+                    .onHover { isHovering in
+                        if isHovering {
+                            hoveredID = item.id
+                        } else if hoveredID == item.id {
+                            hoveredID = nil
+                        }
+                    }
+                    .pointingHandCursor()
                     .onTapGesture { onTap(idx) }
             }
         }
@@ -215,11 +228,11 @@ private struct ResultsListView: View {
 
 private struct ResultRow: View {
     let result: MediaSearchResult
-    let isSelected: Bool
+    let isHighlighted: Bool
     let highlightStyle: SearchHighlightStyle
 
     private var useInvertedForeground: Bool {
-        isSelected && highlightStyle == .accent
+        isHighlighted && highlightStyle == .accent
     }
 
     var body: some View {
@@ -245,7 +258,7 @@ private struct ResultRow: View {
 
     @ViewBuilder
     private var highlightBackground: some View {
-        if isSelected {
+        if isHighlighted {
             switch highlightStyle {
             case .accent: Color.accentColor
             case .neutral: Color.primary.opacity(0.1)
@@ -268,6 +281,35 @@ private struct ResultRow: View {
                 .fill(Color.secondary.opacity(0.2))
                 .frame(width: 40, height: 40)
         }
+    }
+}
+
+private struct PointingHandCursorModifier: ViewModifier {
+    @State private var didPushCursor = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { isHovering in
+                if isHovering, !didPushCursor {
+                    NSCursor.pointingHand.push()
+                    didPushCursor = true
+                } else if !isHovering, didPushCursor {
+                    NSCursor.pop()
+                    didPushCursor = false
+                }
+            }
+            .onDisappear {
+                if didPushCursor {
+                    NSCursor.pop()
+                    didPushCursor = false
+                }
+            }
+    }
+}
+
+private extension View {
+    func pointingHandCursor() -> some View {
+        modifier(PointingHandCursorModifier())
     }
 }
 
