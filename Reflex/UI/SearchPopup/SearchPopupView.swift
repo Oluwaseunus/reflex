@@ -91,7 +91,10 @@ struct SearchPopupView: View {
                         viewModel.onEnterPressed()
                     }
                 )
-                StatusBar(showQueueHint: spotifyAuth.isSignedIn && selectedIsTrack(items))
+                StatusBar(
+                    showQueueHint: spotifyAuth.isSignedIn && selectedIsTrack(items),
+                    showCommandsHint: true
+                )
             }
         case .recents(let items):
             VStack(spacing: 0) {
@@ -105,7 +108,28 @@ struct SearchPopupView: View {
                         viewModel.onEnterPressed()
                     }
                 )
-                StatusBar(showQueueHint: spotifyAuth.isSignedIn && selectedIsTrack(items))
+                StatusBar(
+                    showQueueHint: spotifyAuth.isSignedIn && selectedIsTrack(items),
+                    showCommandsHint: true
+                )
+            }
+        case .commands(let commands):
+            VStack(spacing: 0) {
+                CommandsHeader()
+                if commands.isEmpty {
+                    EmptyCommandsView()
+                } else {
+                    CommandsListView(
+                        commands: commands,
+                        selectedIndex: viewModel.selectedIndex,
+                        highlightStyle: preferences.prefs.searchHighlightStyle,
+                        onTap: { index in
+                            viewModel.selectedIndex = index
+                            viewModel.onEnterPressed()
+                        }
+                    )
+                }
+                StatusBar(primaryActionLabel: "to run")
             }
         case .empty:
             EmptyResultsView()
@@ -132,6 +156,9 @@ private struct RecentsHeader: View {
 
 private struct StatusBar: View {
     var showQueueHint: Bool = false
+    var showCommandsHint: Bool = false
+    var primaryActionLabel: String = "to play"
+
     var body: some View {
         VStack(spacing: 0) {
             Divider().opacity(0.3)
@@ -144,13 +171,21 @@ private struct StatusBar: View {
                 Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "return")
-                    Text("to play").padding(.leading, 2)
+                    Text(primaryActionLabel).padding(.leading, 2)
                 }
                 if showQueueHint {
                     HStack(spacing: 4) {
                         Image(systemName: "command")
                         Image(systemName: "return")
                         Text("to queue").padding(.leading, 2)
+                    }
+                    .padding(.leading, 12)
+                }
+                if showCommandsHint {
+                    HStack(spacing: 4) {
+                        Text(">")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        Text("for commands").padding(.leading, 2)
                     }
                     .padding(.leading, 12)
                 }
@@ -196,6 +231,18 @@ private struct EmptyResultsView: View {
     }
 }
 
+private struct EmptyCommandsView: View {
+    var body: some View {
+        HStack {
+            Spacer()
+            Text("No commands")
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.vertical, 24)
+    }
+}
+
 private struct ResultsListView: View {
     let results: [MediaSearchResult]
     let selectedIndex: Int
@@ -222,6 +269,142 @@ private struct ResultsListView: View {
                     .pointingHandCursor()
                     .onTapGesture { onTap(idx) }
             }
+        }
+    }
+}
+
+private struct CommandsHeader: View {
+    var body: some View {
+        HStack {
+            Text("Commands")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+}
+
+private struct CommandsListView: View {
+    let commands: [SearchCommandItem]
+    let selectedIndex: Int
+    let highlightStyle: SearchHighlightStyle
+    var onTap: (Int) -> Void
+
+    private static let visibleRows = 5
+    private static let rowHeight: CGFloat = 56
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: commands.count > Self.visibleRows) {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(commands.enumerated()), id: \.element.id) { idx, command in
+                        CommandRow(
+                            command: command,
+                            isSelected: idx == selectedIndex && command.isEnabled,
+                            highlightStyle: highlightStyle
+                        )
+                        .id(command.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard command.isEnabled else { return }
+                            onTap(idx)
+                        }
+                    }
+                }
+            }
+            .frame(height: listHeight)
+            .onAppear {
+                scrollToSelection(proxy)
+            }
+            .onChange(of: selectedIndex) { _, _ in
+                scrollToSelection(proxy)
+            }
+            .onChange(of: commands.map { $0.id }) { _, _ in
+                scrollToSelection(proxy)
+            }
+        }
+    }
+
+    private var listHeight: CGFloat {
+        CGFloat(min(commands.count, Self.visibleRows)) * Self.rowHeight
+    }
+
+    private func scrollToSelection(_ proxy: ScrollViewProxy) {
+        guard commands.indices.contains(selectedIndex) else { return }
+        withAnimation(.easeInOut(duration: 0.12)) {
+            proxy.scrollTo(commands[selectedIndex].id, anchor: .center)
+        }
+    }
+}
+
+private struct CommandRow: View {
+    let command: SearchCommandItem
+    let isSelected: Bool
+    let highlightStyle: SearchHighlightStyle
+
+    private var useInvertedForeground: Bool {
+        isSelected && highlightStyle == .accent
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: command.systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(iconColor)
+                .frame(width: 40, height: 40)
+                .background(iconBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(command.title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(titleColor)
+                    .lineLimit(1)
+                Text(command.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(subtitleColor)
+                    .lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(highlightBackground)
+        .opacity(command.isEnabled ? 1 : 0.48)
+    }
+
+    private var titleColor: Color {
+        if !command.isEnabled { return .secondary }
+        return useInvertedForeground ? .white : .primary
+    }
+
+    private var subtitleColor: Color {
+        if useInvertedForeground { return Color.white.opacity(0.75) }
+        return .secondary
+    }
+
+    private var iconColor: Color {
+        if useInvertedForeground { return .white }
+        return command.isEnabled ? .primary : .secondary
+    }
+
+    private var iconBackground: Color {
+        if useInvertedForeground { return Color.white.opacity(0.2) }
+        return Color.secondary.opacity(0.16)
+    }
+
+    @ViewBuilder
+    private var highlightBackground: some View {
+        if isSelected {
+            switch highlightStyle {
+            case .accent: Color.accentColor
+            case .neutral: Color.primary.opacity(0.1)
+            }
+        } else {
+            Color.clear
         }
     }
 }

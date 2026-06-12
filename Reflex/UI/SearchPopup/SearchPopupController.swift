@@ -17,12 +17,17 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
     private var globalKeyMonitor: Any?
     private var resignObserver: NSObjectProtocol?
     private var cancellables: Set<AnyCancellable> = []
+    private var stateManager: PlaybackStateManager?
     // Strong ref, not weak: NSWorkspace's cached NSRunningApplication for an
     // app that is no longer frontmost gets released, so a weak reference goes
     // nil the moment Spotify steals focus — leaving nothing to re-activate.
     private var previousApp: NSRunningApplication?
 
     private override init() { super.init() }
+
+    func configure(stateManager: PlaybackStateManager) {
+        self.stateManager = stateManager
+    }
 
     // MARK: - Hotkey
 
@@ -149,7 +154,11 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
     private func buildPanel() -> SearchPanel {
         let search = SpotifySearchProvider()
         let playback = SpotifyPlaybackProvider()
-        let vm = SearchViewModel(search: search, playback: playback)
+        let vm = SearchViewModel(
+            search: search,
+            playback: playback,
+            stateManager: stateManager
+        )
         self.viewModel = vm
 
         // dropFirst: @Published delivers its current value on subscribe, which

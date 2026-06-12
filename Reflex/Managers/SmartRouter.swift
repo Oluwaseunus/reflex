@@ -128,6 +128,9 @@ final class SmartRouter: ObservableObject {
             trackName: item.title,
             artistName: item.artistName,
             albumName: item.albumName,
+            spotifyTrackURI: item.type == .track ? item.playbackURI : nil,
+            spotifyAlbumURI: item.type == .track ? item.contextURI : (item.type == .album ? item.playbackURI : nil),
+            spotifyArtistURI: item.artistURI,
             timestamp: Date()
         ))
         activeApp = spotify
@@ -355,9 +358,20 @@ final class SmartRouter: ObservableObject {
             stateManager.dismissedTrackKey = nil
 
             // Compare against previous state *before* updating currentState.
-            let previousKey = stateManager.currentState?.trackKey ?? "||"
+            let previousState = stateManager.currentState
+            let previousKey = previousState?.trackKey ?? "||"
             let currentKey = "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
             let trackChanged = previousKey != currentKey
+            let trackURI = spotify.supportsNowPlaying ? AppleScriptHelper.currentSpotifyTrackURI() : nil
+            let albumURI: String?
+            let artistURI: String?
+            if previousState?.spotifyTrackURI == trackURI {
+                albumURI = previousState?.spotifyAlbumURI
+                artistURI = previousState?.spotifyArtistURI
+            } else {
+                albumURI = nil
+                artistURI = nil
+            }
 
             let state = PlaybackState(
                 app: spotify,
@@ -365,6 +379,9 @@ final class SmartRouter: ObservableObject {
                 trackName: trackInfo.track,
                 artistName: trackInfo.artist,
                 albumName: trackInfo.album,
+                spotifyTrackURI: trackURI,
+                spotifyAlbumURI: albumURI,
+                spotifyArtistURI: artistURI,
                 timestamp: Date()
             )
 
@@ -406,6 +423,9 @@ final class SmartRouter: ObservableObject {
                     trackName: current.trackName,
                     artistName: current.artistName,
                     albumName: current.albumName,
+                    spotifyTrackURI: current.spotifyTrackURI,
+                    spotifyAlbumURI: current.spotifyAlbumURI,
+                    spotifyArtistURI: current.spotifyArtistURI,
                     timestamp: Date()
                 )
                 stateManager.updateState(pausedState)

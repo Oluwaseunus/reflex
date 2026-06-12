@@ -74,6 +74,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Setup notification observers
         setupObservers()
 
+        SearchPopupController.shared.configure(stateManager: stateManager)
+
         // Register global hotkey for Spotify search popup.
         SearchPopupController.shared.registerHotkey()
 
