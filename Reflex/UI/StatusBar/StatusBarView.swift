@@ -284,6 +284,8 @@ struct StatusBarView: View {
         switch error {
         case SpotifyUserAPIError.notSignedIn:
             return "Connect Spotify to show queue"
+        case SpotifyUserAPIError.keychain:
+            return "Connect Spotify again to show queue"
         case SpotifyUserAPIError.rateLimited:
             return "Spotify is rate limiting queue updates"
         case SpotifyUserAPIError.network:

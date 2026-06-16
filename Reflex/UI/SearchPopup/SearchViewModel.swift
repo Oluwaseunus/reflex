@@ -218,7 +218,7 @@ final class SearchViewModel: ObservableObject {
                     self.isPlaybackRequestInFlight = false
                     self.state = .error(.playerNotRunning)
                 }
-            } catch SpotifyUserAPIError.notSignedIn {
+            } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                 await MainActor.run {
                     self.isPlaybackRequestInFlight = false
                     self.state = .error(.notAuthenticated)
@@ -261,7 +261,7 @@ final class SearchViewModel: ObservableObject {
                 }
             } catch MediaPlaybackError.playerNotRunning {
                 await MainActor.run { self.state = .error(.playerNotRunning) }
-            } catch SpotifyUserAPIError.notSignedIn {
+            } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                 await MainActor.run { self.state = .error(.notAuthenticated) }
             } catch SpotifyUserAPIError.rateLimited {
                 await MainActor.run { self.state = .error(.rateLimited) }
@@ -465,7 +465,7 @@ final class SearchViewModel: ObservableObject {
                         self.recordCommandUse(kind)
                         self.showToast("Restarted \(trackName)", closeAfterToast: true)
                     }
-                } catch SpotifyUserAPIError.notSignedIn {
+                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                     await MainActor.run { self.state = .error(.notAuthenticated) }
                 } catch SpotifyUserAPIError.rateLimited {
                     await MainActor.run { self.state = .error(.rateLimited) }
@@ -485,7 +485,7 @@ final class SearchViewModel: ObservableObject {
                         self.recordCommandUse(kind)
                         self.showToast("Repeating \(trackName)", closeAfterToast: true)
                     }
-                } catch SpotifyUserAPIError.notSignedIn {
+                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                     await MainActor.run { self.state = .error(.notAuthenticated) }
                 } catch SpotifyUserAPIError.rateLimited {
                     await MainActor.run { self.state = .error(.rateLimited) }
@@ -506,7 +506,7 @@ final class SearchViewModel: ObservableObject {
                         self.recordCommandUse(kind)
                         self.showToast(nextShuffleState ? "Shuffle on" : "Shuffle off", closeAfterToast: true)
                     }
-                } catch SpotifyUserAPIError.notSignedIn {
+                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                     await MainActor.run { self.state = .error(.notAuthenticated) }
                 } catch SpotifyUserAPIError.rateLimited {
                     await MainActor.run { self.state = .error(.rateLimited) }
@@ -564,7 +564,7 @@ final class SearchViewModel: ObservableObject {
                         AppleScriptHelper.openSpotifyURI(albumURI)
                         SearchPopupController.shared.close(restoreFocus: false)
                     }
-                } catch SpotifyUserAPIError.notSignedIn {
+                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                     await MainActor.run { self.state = .error(.notAuthenticated) }
                 } catch SpotifyUserAPIError.rateLimited {
                     await MainActor.run { self.state = .error(.rateLimited) }
@@ -596,7 +596,7 @@ final class SearchViewModel: ObservableObject {
                         AppleScriptHelper.openSpotifyURI(artistURI)
                         SearchPopupController.shared.close(restoreFocus: false)
                     }
-                } catch SpotifyUserAPIError.notSignedIn {
+                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
                     await MainActor.run { self.state = .error(.notAuthenticated) }
                 } catch SpotifyUserAPIError.rateLimited {
                     await MainActor.run { self.state = .error(.rateLimited) }

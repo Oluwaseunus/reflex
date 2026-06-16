@@ -10,6 +10,7 @@ final class SpotifyAuthManager: ObservableObject {
     static let shared = SpotifyAuthManager()
 
     @Published private(set) var isSignedIn: Bool = false
+    @Published private(set) var lastErrorMessage: String?
 
     private var pendingVerifier: String?
     private var pendingState: String?
@@ -21,11 +22,18 @@ final class SpotifyAuthManager: ObservableObject {
     /// at start and must re-check before writing tokens — otherwise a refresh
     /// that completes after Disconnect would resurrect the signed-in state.
     private var authGeneration: Int = 0
+    private var shouldResetKeychainBeforeSignIn: Bool = false
     private let session: URLSession = .shared
     private let logger = Logger.shared
 
     private init() {
-        isSignedIn = SpotifyKeychain.load() != nil
+        do {
+            isSignedIn = try SpotifyKeychain.load() != nil
+        } catch {
+            logger.error("Spotify auth: initial keychain load failed", error: error)
+            isSignedIn = false
+            setKeychainAuthError()
+        }
     }
 
     // MARK: - Sign in
@@ -39,6 +47,8 @@ final class SpotifyAuthManager: ObservableObject {
             logger.error("Spotify sign-in attempted but SPOTIFY_CLIENT_ID is empty — check build env.")
             return
         }
+        let shouldResetKeychain = shouldResetKeychainBeforeSignIn
+        clearAuthNotice()
         // Starting a new sign-in is a clean boundary: bump the generation and
         // cancel any in-flight exchange/refresh from a prior attempt so their
         // late completions can't mutate the new flow's state.
@@ -50,6 +60,17 @@ final class SpotifyAuthManager: ObservableObject {
         // If a previous sign-in was abandoned with the listener still bound,
         // tear it down so the new flow can claim a port.
         callbackServer?.stop()
+
+        if shouldResetKeychain {
+            do {
+                try SpotifyKeychain.deleteStoredTokens()
+                logger.info("Spotify keychain reset before reconnect")
+            } catch {
+                logger.error("Spotify keychain reset before reconnect failed", error: error)
+                setKeychainAuthError()
+                return
+            }
+        }
 
         let verifier = Self.makeCodeVerifier()
         let challenge = Self.codeChallenge(for: verifier)
@@ -72,6 +93,7 @@ final class SpotifyAuthManager: ObservableObject {
         guard let port = maybePort else {
             logger.error("Spotify auth: could not bind any loopback port from \(Constants.Spotify.loopbackPorts)")
             callbackServer = nil
+            setAuthError("Could not start Spotify sign-in. Try again.")
             return
         }
 
@@ -105,6 +127,7 @@ final class SpotifyAuthManager: ObservableObject {
         switch result {
         case .failure(let error):
             logger.error("Spotify auth: loopback listener failed — \(error)")
+            setAuthError("Spotify sign-in did not complete. Try again.")
             resetPending()
         case .success(let url):
             handleCallbackURL(url)
@@ -125,6 +148,7 @@ final class SpotifyAuthManager: ObservableObject {
 
         if let error {
             logger.error("Spotify auth error: \(error)")
+            setAuthError("Spotify sign-in was cancelled or failed.")
             resetPending()
             return
         }
@@ -135,6 +159,7 @@ final class SpotifyAuthManager: ObservableObject {
               let redirectURI = pendingRedirectURI
         else {
             logger.error("Spotify auth: callback missing code or state mismatch")
+            setAuthError("Spotify sign-in callback was invalid. Try again.")
             resetPending()
             return
         }
@@ -148,6 +173,12 @@ final class SpotifyAuthManager: ObservableObject {
                 try await self.exchangeCode(code, verifier: verifier, redirectURI: redirectURI, generation: generation)
             } catch {
                 self.logger.error("Spotify auth: token exchange failed", error: error)
+                self.isSignedIn = false
+                if error is SpotifyKeychainError {
+                    self.setKeychainAuthError()
+                } else {
+                    self.setAuthError("Spotify sign-in failed. Try again.")
+                }
             }
         }
     }
@@ -175,6 +206,23 @@ final class SpotifyAuthManager: ObservableObject {
         }
         SpotifyKeychain.clear()
         isSignedIn = false
+        clearAuthNotice()
+    }
+
+    private func setAuthError(_ message: String) {
+        lastErrorMessage = message
+        shouldResetKeychainBeforeSignIn = false
+    }
+
+    private func setKeychainAuthError() {
+        isSignedIn = false
+        lastErrorMessage = "Reflex couldn't use your saved Spotify login. Please connect Spotify again."
+        shouldResetKeychainBeforeSignIn = true
+    }
+
+    private func clearAuthNotice() {
+        lastErrorMessage = nil
+        shouldResetKeychainBeforeSignIn = false
     }
 
     // MARK: - Access token for callers
@@ -184,8 +232,20 @@ final class SpotifyAuthManager: ObservableObject {
     /// after a 401 to re-fetch even if our clock thinks the cached token is
     /// still valid.
     func accessToken(forceRefresh: Bool = false) async throws -> String {
-        guard let bundle = SpotifyKeychain.load() else {
-            throw SpotifyUserAPIError.notSignedIn
+        let bundle: SpotifyTokenBundle
+        do {
+            guard let loaded = try SpotifyKeychain.load() else {
+                isSignedIn = false
+                throw SpotifyUserAPIError.notSignedIn
+            }
+            bundle = loaded
+        } catch let error as SpotifyUserAPIError {
+            throw error
+        } catch {
+            logger.error("Spotify auth: keychain load failed", error: error)
+            isSignedIn = false
+            setKeychainAuthError()
+            throw SpotifyUserAPIError.keychain(error.localizedDescription)
         }
         if !forceRefresh, bundle.expiresAt.timeIntervalSinceNow > 60 {
             return bundle.accessToken
@@ -236,7 +296,9 @@ final class SpotifyAuthManager: ObservableObject {
         // Sign-out raced us — discard. Without this, an exchange that started
         // before Disconnect would resurrect the signed-in state.
         if Task.isCancelled || generation != authGeneration { return }
-        SpotifyKeychain.save(bundle)
+        try SpotifyKeychain.save(bundle)
+        try verifySavedToken(matches: bundle)
+        clearAuthNotice()
         isSignedIn = true
     }
 
@@ -288,7 +350,16 @@ final class SpotifyAuthManager: ObservableObject {
             if Task.isCancelled || generation != authGeneration {
                 throw SpotifyUserAPIError.notSignedIn
             }
-            SpotifyKeychain.save(bundle)
+            do {
+                try SpotifyKeychain.save(bundle)
+                try verifySavedToken(matches: bundle)
+            } catch {
+                logger.error("Spotify auth: keychain save failed after refresh", error: error)
+                isSignedIn = false
+                setKeychainAuthError()
+                throw SpotifyUserAPIError.keychain(error.localizedDescription)
+            }
+            clearAuthNotice()
             isSignedIn = true
             return bundle.accessToken
         }
@@ -315,6 +386,16 @@ final class SpotifyAuthManager: ObservableObject {
     private static func oauthErrorCode(in data: Data) -> String? {
         struct OAuthError: Decodable { let error: String? }
         return (try? JSONDecoder().decode(OAuthError.self, from: data))?.error
+    }
+
+    private func verifySavedToken(matches expected: SpotifyTokenBundle) throws {
+        guard let saved = try SpotifyKeychain.load() else {
+            throw SpotifyKeychainError.itemMissing
+        }
+        guard saved.accessToken == expected.accessToken,
+              saved.refreshToken == expected.refreshToken else {
+            throw SpotifyKeychainError.unexpectedData
+        }
     }
 
     // MARK: - PKCE helpers
