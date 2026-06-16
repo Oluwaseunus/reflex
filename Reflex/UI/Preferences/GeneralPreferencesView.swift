@@ -4,27 +4,10 @@ import ServiceManagement
 /// General preferences tab
 struct GeneralPreferencesView: View {
     @EnvironmentObject var preferences: PreferencesManager
-    @ObservedObject var accessibilityManager = AccessibilityManager.shared
     @ObservedObject var spotifyAuth = SpotifyAuthManager.shared
 
     var body: some View {
         Form {
-            // Behavior Section
-            Section {
-                Toggle("Enable smart auto-switching", isOn: $preferences.prefs.autoSwitchEnabled)
-                    .help("Automatically route to whichever app is currently playing")
-
-                Toggle("Fall back to system when no media app is playing",
-                       isOn: $preferences.prefs.fallbackToSystem)
-                    .help("Let system handle media keys when no registered media app is actively playing")
-
-                Toggle("Route volume keys through Reflex",
-                       isOn: $preferences.prefs.enableVolumeKeys)
-                    .help("Control volume of target app instead of system volume")
-            } header: {
-                Text("Behavior")
-            }
-
             // Display Section
             Section {
                 Toggle("Show now playing in menu bar",
@@ -64,19 +47,6 @@ struct GeneralPreferencesView: View {
                 .help("Color used to highlight the selected row in the Spotify search popup")
             } header: {
                 Text("Display")
-            }
-
-            // Feedback Section
-            Section {
-                Toggle("Show visual feedback",
-                       isOn: $preferences.prefs.showVisualFeedback)
-                    .help("Flash menu bar icon when commands are sent")
-
-                Toggle("Play audio feedback",
-                       isOn: $preferences.prefs.playAudioFeedback)
-                    .help("Play a sound when commands are sent")
-            } header: {
-                Text("Feedback")
             }
 
             // System Section
@@ -142,29 +112,6 @@ struct GeneralPreferencesView: View {
                 Text("Spotify Account")
             }
 
-            // Permissions Section
-            Section {
-                HStack {
-                    Image(systemName: accessibilityManager.hasPermission ?
-                          "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(accessibilityManager.hasPermission ? .green : .red)
-
-                    Text("Accessibility Permission")
-
-                    Spacer()
-
-                    if accessibilityManager.hasPermission {
-                        Text("Granted")
-                            .foregroundColor(.secondary)
-                    } else {
-                        Button("Grant Access") {
-                            accessibilityManager.openSystemPreferences()
-                        }
-                    }
-                }
-            } header: {
-                Text("Permissions")
-            }
         }
         .modifier(GroupedFormStyleModifier())
         .padding()

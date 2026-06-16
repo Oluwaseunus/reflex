@@ -6,9 +6,15 @@
     <key>com.apple.security.automation.apple-events</key>
     <true/>
 
-    <!-- Disable App Sandbox (required for CGEvent tap) -->
+    <!-- App Sandbox enabled for Mac App Store distribution -->
     <key>com.apple.security.app-sandbox</key>
-    <false/>
+    <true/>
+
+    <!-- Required for Spotify Web API calls and the local OAuth callback listener -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
 
     <!-- Hardened Runtime (required for notarization) -->
     <!-- Note: This is typically set in Xcode build settings, not in entitlements -->

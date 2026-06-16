@@ -10,7 +10,6 @@ final class Logger {
     private lazy var mainLogger = os.Logger(subsystem: subsystem, category: "main")
     private lazy var eventsLogger = os.Logger(subsystem: subsystem, category: "events")
     private lazy var appleScriptLogger = os.Logger(subsystem: subsystem, category: "applescript")
-    private lazy var permissionsLogger = os.Logger(subsystem: subsystem, category: "permissions")
     private lazy var routingLogger = os.Logger(subsystem: subsystem, category: "routing")
 
     private init() {}
@@ -43,10 +42,6 @@ final class Logger {
         eventsLogger.info("[EVENT] \(message, privacy: .public)")
     }
 
-    func mediaKeyPressed(_ keyCode: Int) {
-        eventsLogger.debug("[KEY] Media key pressed: \(keyCode)")
-    }
-
     // MARK: - AppleScript Category
 
     func appleScript(_ message: String) {
@@ -59,16 +54,6 @@ final class Logger {
         } else {
             appleScriptLogger.error("[AS ERROR] \(message, privacy: .public)")
         }
-    }
-
-    // MARK: - Permissions Category
-
-    func permission(_ message: String) {
-        permissionsLogger.info("[PERM] \(message, privacy: .public)")
-    }
-
-    func permissionDenied(_ type: String) {
-        permissionsLogger.warning("[PERM DENIED] \(type, privacy: .public)")
     }
 
     // MARK: - Routing Category

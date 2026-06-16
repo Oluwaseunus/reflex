@@ -1,28 +1,27 @@
-# Reflex - macOS Media Key Router
+# Reflex - macOS Spotify Menu Bar Controller
 
-Reflex is an intelligent macOS menu bar application that routes global media keypresses (play/pause, next, previous) to your preferred media player with smart auto-switching.
+Reflex is a macOS menu bar application for controlling Spotify playback, search, and queue access without switching away from your current app.
 
 ## Features
 
-- **Smart Auto-Switching**: Automatically detects which app is playing and routes media keys there
-- **Multi-App Support**: Works with Spotify, Apple Music, VLC, and more
-- **Quick Switch Menu**: Easily switch between running media apps from the menu bar
+- **Spotify Search**: Find tracks, albums, and artists from a global shortcut
+- **Menu Bar Controls**: Play, pause, skip, scrub, and adjust Spotify playback
+- **Queue View**: See upcoming Spotify tracks from the menu bar
 - **Rich Status Display**: Shows "Now Playing" info with track details in the menu bar
-- **Intelligent App Discovery**: Automatically detects installed media apps
-- **Visual Feedback**: Menu bar icon flashes when commands are sent
 - **Launch at Login**: Option to start Reflex automatically
 
 ## Requirements
 
-- macOS 10.15 (Catalina) or later
-- Accessibility permission (required for media key interception)
+- macOS 14 or later
+- Spotify desktop app
+- Spotify account authorization for search, playback, and queue features
 
 ## Building from Source
 
 ### Prerequisites
 
-- Xcode 14.0 or later
-- macOS 12.0 or later (for development)
+- Xcode 15.0 or later
+- macOS 14.0 or later (for development)
 
 ### Setup Instructions
 
@@ -35,9 +34,9 @@ Reflex is an intelligent macOS menu bar application that routes global media key
    - Language: Swift
 
 2. **Configure the project:**
-   - Set Deployment Target to macOS 10.15
-   - Disable App Sandbox in Signing & Capabilities (required for CGEvent tap)
-   - Add "Hardened Runtime" capability
+   - Set Deployment Target to macOS 14
+   - Enable App Sandbox in Signing & Capabilities
+   - Add Apple Events automation, outgoing network, and incoming network entitlements
 
 3. **Import source files:**
    - Delete the default `ContentView.swift` and `ReflexApp.swift`
@@ -75,13 +74,18 @@ Reflex/
 │   └── AppPreferences.swift     # User preferences
 │
 ├── Managers/
-│   ├── AccessibilityManager.swift   # Permission handling
 │   ├── PreferencesManager.swift     # Preferences persistence
 │   ├── MediaAppDetector.swift       # App discovery
 │   ├── MediaCommandSender.swift     # AppleScript commands
-│   ├── MediaKeyListener.swift       # CGEvent tap
-│   ├── SmartRouter.swift            # Routing logic
+│   ├── SmartRouter.swift            # Spotify command logic
+│   ├── SpotifyBridge.swift          # Spotify API bridge
 │   └── StatusBarManager.swift       # Menu bar UI
+│
+├── Spotify/
+│   ├── SpotifyAuthManager.swift
+│   ├── SpotifyPlaybackProvider.swift
+│   ├── SpotifySearchProvider.swift
+│   └── SpotifyUserAPI.swift
 │
 ├── UI/
 │   ├── StatusBar/
@@ -89,12 +93,10 @@ Reflex/
 │   ├── Preferences/
 │   │   ├── PreferencesWindow.swift
 │   │   ├── GeneralPreferencesView.swift
-│   │   ├── AppsPreferencesView.swift
 │   │   ├── ShortcutsPreferencesView.swift
 │   │   └── AboutPreferencesView.swift
 │   └── Onboarding/
-│       ├── WelcomeView.swift
-│       └── PermissionsGuideView.swift
+│       └── WelcomeView.swift
 │
 ├── Utilities/
 │   ├── Constants.swift
@@ -107,52 +109,35 @@ Reflex/
 
 ## Usage
 
-1. **First Launch**: Grant Accessibility permission when prompted
-2. **Menu Bar**: Click the music note icon to access controls
-3. **Quick Switch**: Select your preferred media app from the popover
-4. **Preferences**: Configure auto-switching, favorites, and display options
+1. **First Launch**: Connect your Spotify account in Preferences
+2. **Menu Bar**: Click the music note icon to access playback controls
+3. **Search**: Use the configured global shortcut to open Spotify search
+4. **Preferences**: Configure launch, display, feedback, and shortcut options
 
 ## Permissions
 
-Reflex requires **Accessibility permission** to intercept media keys. This permission:
-- Allows monitoring of Play/Pause, Next, and Previous keys
-- Enables routing commands to specific apps
-- Is required for the CGEvent tap functionality
-
-To grant permission:
-1. Open System Settings → Privacy & Security → Accessibility
-2. Click the lock to make changes
-3. Enable Reflex in the list
+Reflex uses Apple Events automation to control Spotify playback through AppleScript. macOS may prompt you to allow Reflex to control Spotify the first time a playback command is sent.
 
 ## Supported Apps
 
 - Spotify
-- Apple Music
-- VLC
-- iTunes (legacy)
-- Amazon Music
-- Tidal
-- Deezer
-- Audirvana
-- Plexamp
-- Vox
 
 ## Troubleshooting
 
-### Media keys not working
-1. Ensure Accessibility permission is granted
-2. Check that the target app is running
-3. Try restarting Reflex
+### Spotify controls not working
+1. Ensure Spotify is installed and running
+2. Allow Apple Events automation if macOS prompts for it
+3. Try restarting Reflex and Spotify
 
-### App not detected
-1. Open Preferences → Apps
-2. Check if the app is listed as installed
-3. Add it to favorites for quick access
+### Search is unavailable
+1. Open Preferences → General
+2. Connect your Spotify account
+3. Confirm this build includes Spotify API credentials
 
 ### Commands not sending
-1. Verify the app supports AppleScript control
+1. Verify Spotify responds to AppleScript control
 2. Check Console.app for error messages
-3. Try restarting the target app
+3. Try restarting Spotify
 
 ## License
 

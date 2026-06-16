@@ -10,8 +10,7 @@ enum SearchHighlightStyle: String, Codable, CaseIterable {
 struct AppPreferences: Codable {
     enum CodingKeys: String, CodingKey {
         case favoriteApps, lastUsedApp, autoSwitchEnabled, showNowPlaying, showTrackInfo,
-             showArtistInMenuBar, launchAtLogin, enableVolumeKeys, fallbackToSystem,
-             pollingInterval, showVisualFeedback, playAudioFeedback, customShortcuts,
+             showArtistInMenuBar, launchAtLogin, pollingInterval, customShortcuts,
              hasCompletedOnboarding, preferencesVersion,
              updateMenuBarWhilePopoverOpen, searchHighlightStyle
     }
@@ -37,20 +36,8 @@ struct AppPreferences: Codable {
     /// Launch Reflex when user logs in
     var launchAtLogin: Bool = false
 
-    /// Route volume keys through Reflex
-    var enableVolumeKeys: Bool = false
-
-    /// Fall back to system handling when no media app is available
-    var fallbackToSystem: Bool = true
-
     /// Polling interval for playback state (seconds)
     var pollingInterval: TimeInterval = 5.0
-
-    /// Show visual feedback when commands are sent
-    var showVisualFeedback: Bool = true
-
-    /// Play audio feedback when commands are sent
-    var playAudioFeedback: Bool = false
 
     /// Custom keyboard shortcuts (future use)
     var customShortcuts: [String: String] = [:]
@@ -81,11 +68,7 @@ struct AppPreferences: Codable {
         showTrackInfo = try container.decodeIfPresent(Bool.self, forKey: .showTrackInfo) ?? false
         showArtistInMenuBar = try container.decodeIfPresent(Bool.self, forKey: .showArtistInMenuBar) ?? false
         launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
-        enableVolumeKeys = try container.decodeIfPresent(Bool.self, forKey: .enableVolumeKeys) ?? false
-        fallbackToSystem = try container.decodeIfPresent(Bool.self, forKey: .fallbackToSystem) ?? true
         pollingInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .pollingInterval) ?? 5.0
-        showVisualFeedback = try container.decodeIfPresent(Bool.self, forKey: .showVisualFeedback) ?? true
-        playAudioFeedback = try container.decodeIfPresent(Bool.self, forKey: .playAudioFeedback) ?? false
         customShortcuts = try container.decodeIfPresent([String: String].self, forKey: .customShortcuts) ?? [:]
         updateMenuBarWhilePopoverOpen = try container.decodeIfPresent(Bool.self, forKey: .updateMenuBarWhilePopoverOpen) ?? false
         searchHighlightStyle = try container.decodeIfPresent(SearchHighlightStyle.self, forKey: .searchHighlightStyle) ?? .accent

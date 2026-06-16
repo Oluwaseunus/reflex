@@ -7,7 +7,6 @@ struct StatusBarView: View {
     @EnvironmentObject var stateManager: PlaybackStateManager
     @EnvironmentObject var preferences: PreferencesManager
     @EnvironmentObject var router: SmartRouter
-    @ObservedObject private var accessibilityManager = AccessibilityManager.shared
     @ObservedObject private var spotifyAuth = SpotifyAuthManager.shared
 
     @State private var showingPreferences = false
@@ -21,12 +20,6 @@ struct StatusBarView: View {
             } else {
                 headerSection
                     .padding()
-            }
-
-            if !accessibilityManager.hasPermission {
-                accessibilityWarningSection
-                    .padding(.horizontal)
-                    .padding(.bottom, 12)
             }
 
             Divider()
@@ -63,54 +56,7 @@ struct StatusBarView: View {
             Text("Reflex")
                 .font(.headline)
             Spacer()
-
-            // Permission indicator
-            if !accessibilityManager.hasPermission {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
-                    .help("Accessibility permission required")
-            }
         }
-    }
-
-    private var accessibilityWarningSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
-                Text("Accessibility Permission Required")
-                    .font(.headline)
-            }
-
-            Text("Reflex cannot capture media keys until Accessibility access is granted in System Settings.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                Button("Open Settings") {
-                    accessibilityManager.openSystemPreferences()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-
-                Button("Retry") {
-                    _ = accessibilityManager.checkPermission()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Spacer()
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.orange.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.orange.opacity(0.35), lineWidth: 1)
-        )
     }
 
     // MARK: - Actions Section
