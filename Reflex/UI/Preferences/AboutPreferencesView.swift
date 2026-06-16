@@ -21,7 +21,7 @@ struct AboutPreferencesView: View {
                 .foregroundColor(.secondary)
 
             // Description
-            Text("Intelligent media key routing for macOS")
+            Text("Spotify controls from your menu bar")
                 .font(.body)
                 .foregroundColor(.secondary)
 
@@ -29,9 +29,9 @@ struct AboutPreferencesView: View {
 
             // Features
             VStack(alignment: .leading, spacing: 8) {
-                FeatureRow(icon: "play.circle", text: "Route media keys to your preferred apps")
-                FeatureRow(icon: "arrow.triangle.swap", text: "Smart auto-switching between playing apps")
-                FeatureRow(icon: "music.note.list", text: "Support for Spotify, Apple Music, VLC, and more")
+                FeatureRow(icon: "play.circle", text: "Control Spotify playback")
+                FeatureRow(icon: "sparkle.magnifyingglass", text: "Search tracks, albums, and artists")
+                FeatureRow(icon: "music.note.list", text: "View and manage your Spotify queue")
             }
             .padding()
             .background(Color.secondary.opacity(0.05))

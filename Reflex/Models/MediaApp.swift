@@ -1,6 +1,6 @@
 import Foundation
 
-/// Represents a media application that can receive media key commands
+/// Represents a media application that can receive playback commands
 struct MediaApp: Identifiable, Codable, Equatable, Hashable {
     /// Bundle identifier (e.g., "com.spotify.client")
     let id: String

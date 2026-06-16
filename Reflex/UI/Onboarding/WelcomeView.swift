@@ -9,9 +9,8 @@ struct WelcomeView: View {
 
     enum OnboardingStep: Int, CaseIterable {
         case welcome = 0
-        case permissions = 1
-        case selectApps = 2
-        case complete = 3
+        case selectApps = 1
+        case complete = 2
     }
 
     var body: some View {
@@ -21,8 +20,6 @@ struct WelcomeView: View {
                 switch currentStep {
                 case .welcome:
                     WelcomeStepView()
-                case .permissions:
-                    PermissionsGuideView()
                 case .selectApps:
                     AppSelectionStepView()
                 case .complete:
@@ -107,7 +104,7 @@ struct WelcomeStepView: View {
                 .fontWeight(.bold)
 
             // Subtitle
-            Text("Intelligent media key routing for macOS")
+            Text("Spotify controls from your menu bar")
                 .font(.title3)
                 .foregroundColor(.secondary)
 
@@ -117,18 +114,18 @@ struct WelcomeStepView: View {
             VStack(alignment: .leading, spacing: 16) {
                 OnboardingFeatureRow(
                     icon: "play.circle",
-                    title: "Smart Routing",
-                    description: "Route media keys to your favorite apps"
+                    title: "Playback Controls",
+                    description: "Control Spotify without leaving the current app"
                 )
                 OnboardingFeatureRow(
-                    icon: "arrow.triangle.swap",
-                    title: "Auto-Switching",
-                    description: "Automatically detect which app is playing"
+                    icon: "sparkle.magnifyingglass",
+                    title: "Quick Search",
+                    description: "Find tracks, albums, and artists with a global shortcut"
                 )
                 OnboardingFeatureRow(
                     icon: "music.note.list",
-                    title: "Multi-App Support",
-                    description: "Works with Spotify, Apple Music, VLC, and more"
+                    title: "Queue Access",
+                    description: "View upcoming Spotify tracks from the menu bar"
                 )
             }
             .padding(.horizontal, 60)
@@ -179,7 +176,7 @@ struct AppSelectionStepView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Reflex currently routes media keys to Spotify. Multi-app selection will return once core routing is stable.")
+                Text("Reflex currently focuses on Spotify playback, search, and queue controls. Multi-app selection will return later.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundColor(.secondary)
@@ -207,8 +204,6 @@ struct AppSelectionStepView: View {
 
 /// Completion step
 struct CompletionStepView: View {
-    @ObservedObject var accessibilityManager = AccessibilityManager.shared
-
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -231,18 +226,18 @@ struct CompletionStepView: View {
             // Status summary
             VStack(spacing: 12) {
                 StatusRow(
-                    title: "Accessibility Permission",
-                    isComplete: accessibilityManager.hasPermission
-                )
-
-                StatusRow(
-                    title: "Menu Bar Icon",
+                    title: "Menu Bar App",
                     isComplete: true
                 )
 
                 StatusRow(
-                    title: "Media Key Interception",
-                    isComplete: accessibilityManager.hasPermission
+                    title: "Spotify Controls",
+                    isComplete: true
+                )
+
+                StatusRow(
+                    title: "Search Shortcut",
+                    isComplete: true
                 )
             }
             .padding()

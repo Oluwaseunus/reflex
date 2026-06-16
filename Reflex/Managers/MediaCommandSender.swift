@@ -1,5 +1,4 @@
 import Foundation
-import Cocoa
 
 /// Sends media commands to target applications via AppleScript
 final class MediaCommandSender {
@@ -13,40 +12,11 @@ final class MediaCommandSender {
 
         if success {
             Logger.shared.info("Command sent successfully: \(command.displayName) -> \(app.name)")
-            provideFeedback(for: command)
-            notifyCommandSent(command: command, app: app)
         } else {
             Logger.shared.error("Failed to send command: \(command.displayName) -> \(app.name)")
         }
 
         return success
-    }
-
-    /// Provide feedback after sending a command
-    private func provideFeedback(for command: MediaCommand) {
-        let prefs = PreferencesManager.shared.prefs
-
-        // Visual feedback (handled by StatusBarManager via notification)
-        if prefs.showVisualFeedback {
-            // Notification triggers UI update
-        }
-
-        // Audio feedback
-        if prefs.playAudioFeedback {
-            NSSound.beep()
-        }
-    }
-
-    /// Post notification that a command was sent
-    private func notifyCommandSent(command: MediaCommand, app: MediaApp) {
-        NotificationCenter.default.post(
-            name: Constants.Notifications.commandSent,
-            object: nil,
-            userInfo: [
-                "command": command,
-                "app": app
-            ]
-        )
     }
 
     /// Check if an app can receive commands (is running)

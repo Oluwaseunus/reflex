@@ -36,9 +36,6 @@
     <key>NSAppleEventsUsageDescription</key>
     <string>Reflex needs to send AppleScript commands to control media playback in your music apps.</string>
 
-    <!-- Note: Accessibility permission is checked programmatically via AXIsProcessTrusted() -->
-    <!-- No Info.plist key is required for Accessibility -->
-
     <!-- Copyright -->
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2024. All rights reserved.</string>

@@ -18,9 +18,6 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
     /// Current track info (if showing now playing)
     @Published var currentTrack: String?
 
-    /// Whether permission warning should be shown
-    @Published var showPermissionWarning: Bool = false
-
     private var cancellables = Set<AnyCancellable>()
 
     private var stateManager: PlaybackStateManager?
@@ -89,21 +86,6 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] app in
                 self?.currentApp = app
-            }
-            .store(in: &cancellables)
-
-        // Observe command sent notifications for feedback
-        NotificationCenter.default.publisher(for: Constants.Notifications.commandSent)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.flashIcon()
-            }
-            .store(in: &cancellables)
-
-        AccessibilityManager.shared.$hasPermission
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] hasPermission in
-                self?.setPermissionWarningVisible(!hasPermission)
             }
             .store(in: &cancellables)
 
@@ -334,48 +316,11 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    /// Flash the icon to indicate an action
-    func flashIcon() {
-        guard let button = statusItem?.button,
-              preferences?.prefs.showVisualFeedback == true else { return }
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Constants.Timing.feedbackAnimationDuration
-            button.animator().alphaValue = 0.3
-        } completionHandler: {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Constants.Timing.feedbackAnimationDuration
-                button.animator().alphaValue = 1.0
-            }
-        }
-    }
-
-    /// Show a warning indicator that permission is needed
-    func showPermissionWarningIndicator() {
-        setPermissionWarningVisible(true)
-    }
-
-    func hidePermissionWarningIndicator() {
-        setPermissionWarningVisible(false)
-    }
-
-    func setPermissionWarningVisible(_ visible: Bool) {
-        guard showPermissionWarning != visible else { return }
-        showPermissionWarning = visible
-        if !popoverIsOpen {
-            updateDisplay(state: stateManager?.currentState)
-        }
-    }
-
     private func updateStatusIcon(for state: PlaybackState?, button: NSStatusBarButton) {
         let imageName: String
         let description: String
 
-        if showPermissionWarning {
-            imageName = "exclamationmark.triangle.fill"
-            description = "Accessibility Permission Required"
-            button.toolTip = "Accessibility permission is required to capture media keys"
-        } else if let iconName = state?.app?.icon {
+        if let iconName = state?.app?.icon {
             imageName = iconName
             description = state?.app?.name ?? "Reflex"
             button.toolTip = nil
