@@ -1,5 +1,8 @@
 .build/
+dist/
 .DS_Store
+xcuserdata/
+*.xcuserstate
 PLAN.md
 .env
 .claude/
