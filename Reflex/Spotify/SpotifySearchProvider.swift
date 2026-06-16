@@ -45,6 +45,7 @@ final class SpotifySearchProvider: MediaSearchProvider {
     private static func mapAuthError(_ error: Error) -> MediaSearchError {
         switch error {
         case SpotifyUserAPIError.notSignedIn: return .notAuthenticated
+        case SpotifyUserAPIError.keychain: return .notAuthenticated
         case SpotifyUserAPIError.network: return .network
         default: return .unknown
         }

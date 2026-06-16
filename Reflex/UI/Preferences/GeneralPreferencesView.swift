@@ -121,6 +121,11 @@ struct GeneralPreferencesView: View {
                             Text("Sign in to search Spotify, play tracks and albums, and queue tracks.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                            if let error = spotifyAuth.lastErrorMessage {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
                         }
                     }
 

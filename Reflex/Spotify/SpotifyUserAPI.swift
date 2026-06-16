@@ -2,6 +2,7 @@ import Foundation
 
 enum SpotifyUserAPIError: Error {
     case notSignedIn
+    case keychain(String)
     case invalidURI(String)
     case tokenExchangeFailed(String)
     case tokenRefreshFailed(String)
