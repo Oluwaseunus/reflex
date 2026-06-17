@@ -59,6 +59,37 @@ Reflex is a macOS menu bar application for controlling Spotify playback, search,
    - Select your Mac as the destination
    - Build (⌘B) and Run (⌘R)
 
+### Local Distribution Build
+
+To create a DMG that Gatekeeper accepts on other Macs, the app must be signed
+with a `Developer ID Application` certificate, notarized by Apple, and stapled.
+
+One-time notarization credential setup:
+
+```sh
+xcrun notarytool store-credentials reflex-notary \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password"
+```
+
+Then build the distributable DMG:
+
+```sh
+NOTARY_KEYCHAIN_PROFILE=reflex-notary Scripts/build-dist.sh
+```
+
+If more than one Developer ID Application certificate is installed, choose one
+explicitly:
+
+```sh
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_KEYCHAIN_PROFILE=reflex-notary \
+Scripts/build-dist.sh
+```
+
+The finished artifact is written to `dist/Reflex.dmg`.
+
 ### Project Structure
 
 ```
