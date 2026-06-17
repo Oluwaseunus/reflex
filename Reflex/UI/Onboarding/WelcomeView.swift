@@ -9,8 +9,9 @@ struct WelcomeView: View {
 
     enum OnboardingStep: Int, CaseIterable {
         case welcome = 0
-        case selectApps = 1
-        case complete = 2
+        case permissions = 1
+        case selectApps = 2
+        case complete = 3
     }
 
     var body: some View {
@@ -20,6 +21,8 @@ struct WelcomeView: View {
                 switch currentStep {
                 case .welcome:
                     WelcomeStepView()
+                case .permissions:
+                    AutomationPermissionStepView()
                 case .selectApps:
                     AppSelectionStepView()
                 case .complete:
@@ -33,7 +36,7 @@ struct WelcomeView: View {
             // Navigation
             navigationBar
         }
-        .frame(width: 600, height: 560)
+        .frame(width: 600, height: 600)
     }
 
     private var navigationBar: some View {
@@ -136,6 +139,38 @@ struct WelcomeStepView: View {
     }
 }
 
+/// Automation permission step during onboarding
+struct AutomationPermissionStepView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Image(systemName: "lock.shield")
+                .font(.system(size: 56))
+                .foregroundColor(.accentColor)
+
+            VStack(spacing: 8) {
+                Text("Automation Access")
+                    .font(.title)
+                    .fontWeight(.bold)
+
+                Text("Reflex needs permission to control Spotify and read current playback context.")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 50)
+
+            AutomationPermissionControls()
+                .padding(.horizontal, 60)
+
+            Spacer()
+        }
+        .padding()
+    }
+}
+
 /// Feature row for onboarding
 struct OnboardingFeatureRow: View {
     let icon: String
@@ -162,8 +197,6 @@ struct OnboardingFeatureRow: View {
 
 /// App selection step during onboarding
 struct AppSelectionStepView: View {
-    @EnvironmentObject var preferences: PreferencesManager
-
     var body: some View {
         VStack(spacing: 24) {
             // Header
@@ -185,18 +218,26 @@ struct AppSelectionStepView: View {
 
             Spacer()
 
-            Button(action: {
-                preferences.completeOnboarding()
-            }) {
-                Text("Continue")
-                    .font(.headline)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Spotify")
+                        .font(.headline)
+                    Text("Enabled for playback, search, and queue controls")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
             }
-            .buttonStyle(.plain)
+            .padding()
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(12)
+            .padding(.horizontal, 60)
+
+            Spacer()
         }
         .padding()
     }

@@ -240,6 +240,25 @@ final class AppleScriptHelper {
         return result.output
     }
 
+    /// Send a harmless Spotify Apple Event so macOS can prompt for Automation access.
+    static func requestSpotifyAutomationPermission() -> ExecutionResult {
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty else {
+            let error = NSError(
+                domain: "AppleScriptError",
+                code: -600,
+                userInfo: [NSLocalizedDescriptionKey: "Open Spotify, then request Automation access again."]
+            )
+            return ExecutionResult(success: false, output: nil, error: error)
+        }
+
+        let script = """
+        tell application "Spotify"
+            return player state as string
+        end tell
+        """
+        return execute(script)
+    }
+
     // MARK: - Playback Info
 
     /// Get current playback position in seconds

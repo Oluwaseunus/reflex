@@ -138,7 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(appDetector)
 
         onboardingWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 580),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 620),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -171,7 +171,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(appDetector)
 
         preferencesWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
