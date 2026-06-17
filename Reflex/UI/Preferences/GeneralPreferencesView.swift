@@ -4,7 +4,6 @@ import ServiceManagement
 /// General preferences tab
 struct GeneralPreferencesView: View {
     @EnvironmentObject var preferences: PreferencesManager
-    @ObservedObject var spotifyAuth = SpotifyAuthManager.shared
 
     var body: some View {
         Form {
@@ -72,46 +71,6 @@ struct GeneralPreferencesView: View {
             } header: {
                 Text("System")
             }
-
-            // Spotify Account Section
-            Section {
-                HStack {
-                    Image(systemName: spotifyAuth.isSignedIn ?
-                          "checkmark.circle.fill" : "circle")
-                        .foregroundColor(spotifyAuth.isSignedIn ? .green : .secondary)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        if !spotifyAuth.isConfigured {
-                            Text("Unavailable in this build")
-                            Text("This build was compiled without Spotify API credentials.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text(spotifyAuth.isSignedIn ? "Connected" : "Not connected")
-                            Text("Sign in to search Spotify, play tracks and albums, and queue tracks.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            if let error = spotifyAuth.lastErrorMessage {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    if spotifyAuth.isSignedIn {
-                        Button("Disconnect") { spotifyAuth.signOut() }
-                    } else {
-                        Button("Connect Spotify") { spotifyAuth.beginSignIn() }
-                            .disabled(!spotifyAuth.isConfigured)
-                    }
-                }
-            } header: {
-                Text("Spotify Account")
-            }
-
         }
         .modifier(GroupedFormStyleModifier())
         .padding()
