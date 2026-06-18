@@ -388,7 +388,7 @@ struct NowPlayingCard: View {
             // Main content: Album art and controls
             HStack(spacing: 12) {
                 // Album artwork
-                Button(action: openTrackLink) {
+                Button(action: openAlbumLink) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(nsColor: .controlBackgroundColor))
@@ -409,13 +409,13 @@ struct NowPlayingCard: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
-                .disabled(!canOpenTrack)
+                .disabled(!canOpenAlbum)
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                 // Right side: Track info, controls, and progress
                 VStack(alignment: .leading, spacing: 0) {
                     // Track name with hover marquee
-                    Button(action: openTrackLink) {
+                    Button(action: openAlbumLink) {
                         HoverMarquee(text: state.trackName ?? "Unknown Track")
                             .font(.system(size: 14, weight: .semibold))
                             .lineLimit(1)
@@ -427,7 +427,7 @@ struct NowPlayingCard: View {
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
-                    .disabled(!canOpenTrack)
+                    .disabled(!canOpenAlbum)
 
                     // Artist and album deep links
                     HStack(spacing: 4) {
@@ -444,14 +444,14 @@ struct NowPlayingCard: View {
                             Text("-")
                                 .foregroundColor(.secondary)
 
-                            Button(action: openTrackLink) {
+                            Button(action: openAlbumLink) {
                                 Text(state.albumName ?? "")
                                     .lineLimit(1)
                             }
                             .buttonStyle(.plain)
                             .focusable(false)
                             .foregroundColor(.secondary)
-                            .disabled(!canOpenTrack)
+                            .disabled(!canOpenAlbum)
                         }
                     }
                     .font(.system(size: 11))
@@ -610,10 +610,6 @@ struct NowPlayingCard: View {
     }
 
     private var canOpenAlbum: Bool {
-        state.albumName != nil && state.app?.bundleIdentifier == "com.spotify.client"
-    }
-
-    private var canOpenTrack: Bool {
         state.trackName != nil && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
@@ -621,23 +617,50 @@ struct NowPlayingCard: View {
         state.artistName != nil && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
-    private func openTrackLink() {
-        guard canOpenTrack, let app = state.app else { return }
-        // Spotify is already on the current track — just bring it to the front.
-        // (Opening a spotify:track: URI would auto-play, which we don't want.)
-        AppleScriptHelper.activateApp(app)
-    }
-
     private func openAlbumLink() {
-        guard canOpenAlbum, let album = state.albumName else { return }
-        let uri = AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
-        AppleScriptHelper.openSpotifyURI(uri)
+        guard canOpenAlbum else { return }
+
+        if let uri = state.spotifyAlbumURI {
+            AppleScriptHelper.openSpotifyURI(uri)
+            return
+        }
+
+        guard let trackURI = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
+
+        Task {
+            do {
+                let albumURI = try await SpotifyUserAPI.shared.albumContextURI(forTrackURI: trackURI)
+                await MainActor.run {
+                    AppleScriptHelper.openSpotifyURI(albumURI)
+                }
+            } catch {
+                return
+            }
+        }
     }
 
     private func openArtistLink() {
-        guard canOpenArtist, let artist = state.artistName else { return }
-        let uri = AppleScriptHelper.spotifyArtistSearchURI(artist: artist)
-        AppleScriptHelper.openSpotifyURI(uri)
+        guard canOpenArtist else { return }
+
+        if let uri = state.spotifyArtistURI {
+            AppleScriptHelper.openSpotifyURI(uri)
+            return
+        }
+
+        guard let trackURI = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
+
+        Task {
+            do {
+                guard let artistURI = try await SpotifyUserAPI.shared.trackContext(forTrackURI: trackURI).artistURI else {
+                    return
+                }
+                await MainActor.run {
+                    AppleScriptHelper.openSpotifyURI(artistURI)
+                }
+            } catch {
+                return
+            }
+        }
     }
 
     private func progressWidth(for position: Double, totalWidth: CGFloat) -> CGFloat {
