@@ -56,6 +56,12 @@ struct PlaybackState {
         "\(trackName ?? "")||\(artistName ?? "")"
     }
 
+    /// Whether the state has enough metadata to render the player without
+    /// fallback "Unknown" labels.
+    var hasDisplayableTrackInfo: Bool {
+        trackName != nil && artistName != nil
+    }
+
     /// Check if state is stale (older than threshold)
     func isStale(threshold: TimeInterval = 30) -> Bool {
         Date().timeIntervalSince(timestamp) > threshold

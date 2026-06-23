@@ -299,11 +299,28 @@ final class SmartRouter: ObservableObject {
         if let spotify = appDetector.app(withBundleId: spotifyBundleId),
            spotify.isRunning,
            AppleScriptHelper.checkIfAppIsPlaying(spotify) {
-            let trackInfo: (track: String?, artist: String?, album: String?)
+            let previousState = stateManager.currentState
+            let rawTrackInfo: (track: String?, artist: String?, album: String?)
             if spotify.supportsNowPlaying {
-                trackInfo = AppleScriptHelper.getCurrentTrack(from: spotify)
+                rawTrackInfo = AppleScriptHelper.getCurrentTrack(from: spotify)
             } else {
-                trackInfo = (nil, nil, nil)
+                rawTrackInfo = (nil, nil, nil)
+            }
+
+            let trackInfo: (track: String?, artist: String?, album: String?)
+            if rawTrackInfo.track != nil && rawTrackInfo.artist != nil {
+                trackInfo = rawTrackInfo
+            } else if let previousState,
+                      previousState.app?.bundleIdentifier == spotifyBundleId,
+                      previousState.hasDisplayableTrackInfo {
+                trackInfo = (
+                    track: previousState.trackName,
+                    artist: previousState.artistName,
+                    album: previousState.albumName
+                )
+            } else {
+                Logger.shared.debug("Spotify is playing but track metadata is unavailable; leaving display state unchanged")
+                return
             }
 
             if let currentVol = AppleScriptHelper.getVolume(for: spotify), currentVol > 0 {
@@ -314,7 +331,6 @@ final class SmartRouter: ObservableObject {
             stateManager.dismissedTrackKey = nil
 
             // Compare against previous state *before* updating currentState.
-            let previousState = stateManager.currentState
             let previousKey = previousState?.trackKey ?? "||"
             let currentKey = "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
             let trackChanged = previousKey != currentKey
