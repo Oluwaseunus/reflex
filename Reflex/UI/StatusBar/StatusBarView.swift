@@ -15,7 +15,7 @@ struct StatusBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let state = stateManager.currentState {
+            if let state = stateManager.currentState, state.hasDisplayableTrackInfo {
                 NowPlayingCard(state: state, router: router, stateManager: stateManager)
             } else {
                 headerSection
