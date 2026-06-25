@@ -147,6 +147,33 @@ struct SpotifyUserAPI {
         return SpotifyPlaybackSnapshot(shuffleState: decoded.shuffleState)
     }
 
+    func currentPlaybackContextURI() async throws -> String? {
+        let url = URL(string: "https://api.spotify.com/v1/me/player")!
+        let data = try await sendJSON(url: url, method: "GET", body: nil)
+        guard !data.isEmpty else { return nil }
+
+        struct PlaybackResponse: Decodable {
+            struct Context: Decodable {
+                struct ExternalURLs: Decodable {
+                    let spotify: String?
+                }
+
+                let uri: String?
+                let externalURLs: ExternalURLs?
+
+                enum CodingKeys: String, CodingKey {
+                    case uri
+                    case externalURLs = "external_urls"
+                }
+            }
+
+            let context: Context?
+        }
+
+        let decoded = try JSONDecoder().decode(PlaybackResponse.self, from: data)
+        return decoded.context?.uri ?? decoded.context?.externalURLs?.spotify
+    }
+
     func currentQueue(limit: Int = 5) async throws -> [SpotifyQueueItem] {
         let url = URL(string: "https://api.spotify.com/v1/me/player/queue")!
         let data = try await sendJSON(url: url, method: "GET", body: nil)

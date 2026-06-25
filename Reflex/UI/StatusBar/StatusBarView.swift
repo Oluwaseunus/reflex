@@ -388,7 +388,7 @@ struct NowPlayingCard: View {
             // Main content: Album art and controls
             HStack(spacing: 12) {
                 // Album artwork
-                Button(action: openAlbumLink) {
+                Button(action: openPlaybackContextLink) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(nsColor: .controlBackgroundColor))
@@ -409,7 +409,8 @@ struct NowPlayingCard: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
-                .disabled(!canOpenAlbum)
+                .disabled(!canOpenPlaybackContext)
+                .help("Open current Spotify context")
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                 // Right side: Track info, controls, and progress
@@ -613,8 +614,34 @@ struct NowPlayingCard: View {
         state.trackName != nil && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
+    private var canOpenPlaybackContext: Bool {
+        state.trackName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
     private var canOpenArtist: Bool {
         state.artistName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
+    private func openPlaybackContextLink() {
+        guard canOpenPlaybackContext else { return }
+
+        Task {
+            do {
+                if let contextURI = try await SpotifyUserAPI.shared.currentPlaybackContextURI() {
+                    await MainActor.run {
+                        AppleScriptHelper.openSpotifyURI(contextURI)
+                    }
+                    return
+                }
+                await MainActor.run {
+                    openAlbumLink()
+                }
+            } catch {
+                await MainActor.run {
+                    openAlbumLink()
+                }
+            }
+        }
     }
 
     private func openAlbumLink() {
