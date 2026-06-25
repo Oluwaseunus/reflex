@@ -29,6 +29,7 @@ BUNDLE_ID="com.reflex.app"
 BUILD_DIR=".build/release"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 DEST="/Applications/$APP_NAME.app"
+DEST_EXECUTABLE="$DEST/Contents/MacOS/$APP_NAME"
 
 # Code-signing identity. Using a stable self-signed cert (instead of ad-hoc "-")
 # keeps the code-signing identity constant across rebuilds, which lets TCC
@@ -45,8 +46,14 @@ if ! security find-identity -v | grep -q "$SIGN_IDENTITY"; then
     SIGN_IDENTITY="-"
 fi
 
-echo "==> Killing any running instances of $APP_NAME..."
-killall "$APP_NAME" 2>/dev/null || true
+echo "==> Stopping any running $APP_NAME from $DEST..."
+running_pids="$(pgrep -f "^${DEST_EXECUTABLE}($| )" 2>/dev/null || true)"
+if [ -n "$running_pids" ]; then
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        kill "$pid" 2>/dev/null || true
+    done <<< "$running_pids"
+fi
 
 # Source local .env so SPOTIFY_CLIENT_ID is exported into swift build's
 # environment. Scripts/generate-spotify-secrets.sh reads it and bakes the value
