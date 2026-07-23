@@ -84,8 +84,10 @@ final class SpotifySearchProvider: MediaSearchProvider {
             let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
             let tracks = (decoded.tracks?.items ?? []).prefix(3).map { item in
                 let primaryArtistRef = item.artists.first
-                let primaryArtist = primaryArtistRef?.name ?? ""
-                let subtitle = "\(primaryArtist) • \(item.album.name)"
+                let artistName = artistName(for: item.artists)
+                let subtitle = [artistName, item.album.name]
+                    .compactMap { $0 }
+                    .joined(separator: " • ")
                 return MediaSearchResult(
                     id: "track:\(item.id)",
                     title: item.name,
@@ -94,23 +96,23 @@ final class SpotifySearchProvider: MediaSearchProvider {
                     artworkURL: smallestImageURL(item.album.images),
                     playbackURI: item.uri,
                     contextURI: item.album.uri,
-                    artistName: primaryArtist.isEmpty ? nil : primaryArtist,
+                    artistName: artistName,
                     artistURI: primaryArtistRef?.uri,
                     albumName: item.album.name
                 )
             }
             let albums = (decoded.albums?.items ?? []).prefix(2).map { item in
                 let primaryArtistRef = item.artists.first
-                let primaryArtist = primaryArtistRef?.name ?? ""
+                let artistName = artistName(for: item.artists)
                 return MediaSearchResult(
                     id: "album:\(item.id)",
                     title: item.name,
-                    subtitle: primaryArtist,
+                    subtitle: artistName ?? "",
                     type: .album,
                     artworkURL: smallestImageURL(item.images),
                     playbackURI: item.uri,
                     contextURI: nil,
-                    artistName: primaryArtist.isEmpty ? nil : primaryArtist,
+                    artistName: artistName,
                     artistURI: primaryArtistRef?.uri,
                     albumName: nil
                 )
@@ -119,6 +121,14 @@ final class SpotifySearchProvider: MediaSearchProvider {
         } catch {
             throw MediaSearchError.unknown
         }
+    }
+
+    private func artistName(for artists: [ArtistRef]) -> String? {
+        let artistName = artists
+            .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        return artistName.isEmpty ? nil : artistName
     }
 
     private func smallestImageURL(_ images: [SpotifyImage]) -> URL? {

@@ -58,7 +58,7 @@ struct SearchPopupView: View {
                     get: { viewModel.query },
                     set: { viewModel.onQueryChanged($0) }
                 ),
-                placeholder: "Search for a song or album…",
+                placeholder: "Search Spotify…",
                 cursorColor: cursorColor,
                 onMoveUp: { viewModel.moveSelection(by: -1) },
                 onMoveDown: { viewModel.moveSelection(by: 1) },
@@ -93,7 +93,7 @@ struct SearchPopupView: View {
                 )
                 StatusBar(
                     showQueueHint: spotifyAuth.isSignedIn && selectedIsTrack(items),
-                    showCommandsHint: true
+                    primaryActionLabel: "to search Spotify"
                 )
             }
         case .recents(let items):

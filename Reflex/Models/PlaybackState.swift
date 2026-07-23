@@ -13,7 +13,7 @@ struct PlaybackState {
     /// Current track name (if available)
     let trackName: String?
 
-    /// Current artist name (if available)
+    /// Current artist display name (if available)
     let artistName: String?
 
     /// Current album name (if available)
@@ -53,7 +53,10 @@ struct PlaybackState {
 
     /// Stable identity key for this track (used for dismiss/change detection)
     var trackKey: String {
-        "\(trackName ?? "")||\(artistName ?? "")"
+        if let spotifyTrackURI, !spotifyTrackURI.isEmpty {
+            return spotifyTrackURI
+        }
+        return "\(trackName ?? "")||\(artistName ?? "")"
     }
 
     /// Check if state is stale (older than threshold)

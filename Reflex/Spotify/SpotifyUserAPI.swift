@@ -37,6 +37,7 @@ enum SpotifyRepeatMode: String {
 struct SpotifyTrackContext {
     let albumURI: String
     let artistURI: String?
+    let artistName: String?
 }
 
 struct SpotifyPlaybackSnapshot {
@@ -79,14 +80,22 @@ struct SpotifyUserAPI {
         let data = try await sendJSON(url: url, method: "GET", body: nil)
         struct Track: Decodable {
             struct Album: Decodable { let uri: String }
-            struct Artist: Decodable { let uri: String? }
+            struct Artist: Decodable {
+                let name: String
+                let uri: String?
+            }
             let album: Album
             let artists: [Artist]
         }
         let track = try JSONDecoder().decode(Track.self, from: data)
+        let artistName = track.artists
+            .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
         return SpotifyTrackContext(
             albumURI: track.album.uri,
-            artistURI: track.artists.first?.uri
+            artistURI: track.artists.first?.uri,
+            artistName: artistName.isEmpty ? nil : artistName
         )
     }
 
@@ -279,7 +288,16 @@ private extension SpotifyQueueItem {
             return nil
         }
 
-        let artistName = item.artists?.first?.name ?? "Unknown Artist"
+        let artistName: String
+        if let artistNames = item.artists?
+            .map({ $0.name.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .filter({ !$0.isEmpty })
+            .joined(separator: ", "),
+           !artistNames.isEmpty {
+            artistName = artistNames
+        } else {
+            artistName = "Unknown Artist"
+        }
         self.id = "queue:\(id)"
         self.title = item.name
         self.artistName = artistName
