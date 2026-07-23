@@ -315,25 +315,28 @@ final class SmartRouter: ObservableObject {
 
             // Compare against previous state *before* updating currentState.
             let previousState = stateManager.currentState
-            let previousKey = previousState?.trackKey ?? "||"
-            let currentKey = "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
-            let trackChanged = previousKey != currentKey
             let trackURI = spotify.supportsNowPlaying ? AppleScriptHelper.currentSpotifyTrackURI() : nil
+            let previousKey = previousState?.trackKey ?? "||"
+            let currentKey = trackURI ?? "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
+            let trackChanged = previousKey != currentKey
             let albumURI: String?
             let artistURI: String?
-            if previousState?.spotifyTrackURI == trackURI {
+            let artistName: String?
+            if trackURI != nil, previousState?.spotifyTrackURI == trackURI {
                 albumURI = previousState?.spotifyAlbumURI
                 artistURI = previousState?.spotifyArtistURI
+                artistName = previousState?.artistName ?? trackInfo.artist
             } else {
                 albumURI = nil
                 artistURI = nil
+                artistName = trackInfo.artist
             }
 
             let state = PlaybackState(
                 app: spotify,
                 isPlaying: true,
                 trackName: trackInfo.track,
-                artistName: trackInfo.artist,
+                artistName: artistName,
                 albumName: trackInfo.album,
                 spotifyTrackURI: trackURI,
                 spotifyAlbumURI: albumURI,
@@ -357,6 +360,10 @@ final class SmartRouter: ObservableObject {
                         }
                     }
                 }
+            }
+
+            if let trackURI, trackChanged || albumURI == nil {
+                refreshSpotifyTrackContext(for: trackURI)
             }
         } else {
             // Preserve last known track so user can resume from the menu bar,
@@ -395,6 +402,37 @@ final class SmartRouter: ObservableObject {
             suppressSpotifyPollingUntil = nil
         }
         refreshSpotifyPlaybackState(reason: "timer")
+    }
+
+    private func refreshSpotifyTrackContext(for trackURI: String) {
+        Task { [weak self] in
+            guard await SpotifyAuthManager.shared.isSignedIn else { return }
+
+            do {
+                let context = try await SpotifyUserAPI.shared.trackContext(forTrackURI: trackURI)
+                await self?.applySpotifyTrackContext(context, for: trackURI)
+            } catch {
+                Logger.shared.debug("Could not refresh Spotify track context: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private func applySpotifyTrackContext(_ context: SpotifyTrackContext, for trackURI: String) {
+        guard let current = stateManager.currentState,
+              current.spotifyTrackURI == trackURI else { return }
+
+        stateManager.updateState(PlaybackState(
+            app: current.app,
+            isPlaying: current.isPlaying,
+            trackName: current.trackName,
+            artistName: context.artistName ?? current.artistName,
+            albumName: current.albumName,
+            spotifyTrackURI: current.spotifyTrackURI,
+            spotifyAlbumURI: context.albumURI,
+            spotifyArtistURI: context.artistURI,
+            timestamp: Date()
+        ))
     }
 
     deinit {

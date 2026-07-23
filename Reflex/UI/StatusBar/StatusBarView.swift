@@ -418,8 +418,6 @@ struct NowPlayingCard: View {
                     Button(action: openTrackLink) {
                         HoverMarquee(text: state.trackName ?? "Unknown Track")
                             .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
                             .foregroundColor(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: 18, alignment: .leading)
@@ -429,32 +427,32 @@ struct NowPlayingCard: View {
                     .focusable(false)
                     .disabled(!canOpenTrack)
 
-                    // Artist and album deep links
-                    HStack(spacing: 4) {
-                        Button(action: openArtistLink) {
-                            Text(state.artistName ?? "Unknown Artist")
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .foregroundColor(.secondary)
-                        .disabled(!canOpenArtist)
-
-                        if state.albumName != nil {
-                            Text("-")
-                                .foregroundColor(.secondary)
-
-                            Button(action: openTrackLink) {
-                                Text(state.albumName ?? "")
-                                    .lineLimit(1)
-                            }
-                            .buttonStyle(.plain)
-                            .focusable(false)
+                    Button(action: openAlbumLink) {
+                        Text(state.albumName ?? "Unknown Album")
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .foregroundColor(.secondary)
-                            .disabled(!canOpenTrack)
-                        }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 14, alignment: .leading)
+                            .accessibilityLabel(state.albumName ?? "Unknown Album")
                     }
-                    .font(.system(size: 11))
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .disabled(!canOpenAlbum)
+                    .padding(.top, 2)
+
+                    Button(action: openArtistLink) {
+                        HoverMarquee(text: state.artistName ?? "Unknown Artist")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 14, alignment: .leading)
+                            .accessibilityLabel(state.artistName ?? "Unknown Artist")
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .disabled(!canOpenArtist)
                     .padding(.top, 2)
 
                     Spacer()
@@ -610,7 +608,7 @@ struct NowPlayingCard: View {
     }
 
     private var canOpenAlbum: Bool {
-        state.albumName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+        (state.albumName != nil || state.spotifyAlbumURI != nil) && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
     private var canOpenTrack: Bool {
@@ -618,7 +616,7 @@ struct NowPlayingCard: View {
     }
 
     private var canOpenArtist: Bool {
-        state.artistName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+        (state.artistName != nil || state.spotifyArtistURI != nil) && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
     private func openTrackLink() {
@@ -629,13 +627,23 @@ struct NowPlayingCard: View {
     }
 
     private func openAlbumLink() {
-        guard canOpenAlbum, let album = state.albumName else { return }
+        guard canOpenAlbum else { return }
+        if let uri = state.spotifyAlbumURI {
+            AppleScriptHelper.openSpotifyURI(uri)
+            return
+        }
+        guard let album = state.albumName else { return }
         let uri = AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
         AppleScriptHelper.openSpotifyURI(uri)
     }
 
     private func openArtistLink() {
-        guard canOpenArtist, let artist = state.artistName else { return }
+        guard canOpenArtist else { return }
+        if let uri = state.spotifyArtistURI {
+            AppleScriptHelper.openSpotifyURI(uri)
+            return
+        }
+        guard let artist = state.artistName else { return }
         let uri = AppleScriptHelper.spotifyArtistSearchURI(artist: artist)
         AppleScriptHelper.openSpotifyURI(uri)
     }
@@ -847,6 +855,8 @@ struct HoverMarquee: View {
     @State private var containerWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
     @State private var isHovering: Bool = false
+    @State private var showsFullText: Bool = false
+    @State private var hoverGeneration: Int = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -854,22 +864,57 @@ struct HoverMarquee: View {
             ZStack(alignment: .leading) {
                 Text(text)
                     .lineLimit(1)
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear
-                                .onAppear { textWidth = proxy.size.width }
-                        }
-                    )
+                    .truncationMode(.tail)
+                    .frame(width: available, alignment: .leading)
+                    .opacity(showsFullText ? 0 : 1)
+
+                Text(text)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .offset(x: offset)
-                    .animation(.linear(duration: animationDuration(available: available))
-                        .repeatForever(autoreverses: false), value: offset)
+                    .opacity(showsFullText ? 1 : 0)
+
+                Color.clear
+                    .overlay(alignment: .leading) {
+                        Text(text)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear
+                                        .onAppear { textWidth = proxy.size.width }
+                                        .onChange(of: proxy.size.width) { _, newValue in
+                                            textWidth = newValue
+                                        }
+                                }
+                            )
+                            .opacity(0)
+                    }
+                    .allowsHitTesting(false)
             }
+            .frame(width: available, alignment: .leading)
             .onAppear {
                 containerWidth = available
             }
             .onChange(of: available) { _, newValue in
                 containerWidth = newValue
-                reset()
+                if isHovering {
+                    startIfNeeded()
+                } else {
+                    reset()
+                }
+            }
+            .onChange(of: text) { _, _ in
+                if isHovering {
+                    startIfNeeded()
+                } else {
+                    reset()
+                }
+            }
+            .onChange(of: textWidth) { _, _ in
+                if isHovering {
+                    startIfNeeded()
+                }
             }
             .onHover { hovering in
                 isHovering = hovering
@@ -879,27 +924,44 @@ struct HoverMarquee: View {
                     reset()
                 }
             }
+            .contentShape(Rectangle())
             .clipped()
         }
     }
 
     private func startIfNeeded() {
-        guard textWidth > containerWidth else { return }
-        offset = 0
+        hoverGeneration &+= 1
+        let generation = hoverGeneration
+        guard textWidth > containerWidth else {
+            showsFullText = false
+            resetOffset()
+            return
+        }
+
+        showsFullText = true
+        resetOffset()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard isHovering else { return }
-            offset = -(textWidth - containerWidth + 12) // slight gap
+            guard isHovering, generation == hoverGeneration else { return }
+            let distance = textWidth - containerWidth
+            guard distance > 0 else { return }
+            withAnimation(.linear(duration: Double(distance) / speed)) {
+                offset = -distance
+            }
         }
     }
 
     private func reset() {
-        offset = 0
+        hoverGeneration &+= 1
+        withTransaction(Transaction(animation: nil)) {
+            showsFullText = false
+            offset = 0
+        }
     }
 
-    private func animationDuration(available: CGFloat) -> Double {
-        let distance = max(textWidth - available, 0)
-        if distance == 0 { return 0.1 }
-        return Double(distance) / speed
+    private func resetOffset() {
+        withTransaction(Transaction(animation: nil)) {
+            offset = 0
+        }
     }
 }
 

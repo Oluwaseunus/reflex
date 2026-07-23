@@ -129,14 +129,8 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
-        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            selectedIndex = 0
-            state = idleState()
-            return
-        }
-        state = .loading
-        runSearch(for: trimmed)
+        selectedIndex = 0
+        state = .idle
     }
 
     private func idleState() -> SearchPopupState {
@@ -192,8 +186,15 @@ final class SearchViewModel: ObservableObject {
             runSelectedCommand(commands)
             return
         }
-        guard let item = currentItem() else { return }
-        play(item: item)
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            SearchPopupController.shared.close(restoreFocus: true)
+            return
+        }
+
+        SearchPopupController.shared.close(restoreFocus: true)
+        SpotifyBackgroundController.shared.play(query: trimmedQuery)
     }
 
     func onShiftEnterPressed() {

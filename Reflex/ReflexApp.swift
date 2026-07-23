@@ -8,7 +8,8 @@ struct ReflexApp: App {
     var body: some Scene {
         // No main window - this is a menu bar app
         Settings {
-            EmptyView()
+            PreferencesWindow()
+                .environmentObject(PreferencesManager.shared)
         }
         .commands {
             CommandGroup(replacing: .appSettings) {
@@ -40,7 +41,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Windows
 
     private var onboardingWindow: NSWindow?
-    private var preferencesWindow: NSWindow?
 
     // MARK: - Observers
 
@@ -159,30 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func showPreferences() {
         logger.info("Showing preferences")
 
-        // If window exists, just bring it to front
-        if let window = preferencesWindow {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let contentView = PreferencesWindow()
-            .environmentObject(preferencesManager)
-            .environmentObject(appDetector)
-
-        preferencesWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-
-        preferencesWindow?.title = "Reflex Preferences"
-        preferencesWindow?.center()
-        preferencesWindow?.contentView = NSHostingView(rootView: contentView)
-        preferencesWindow?.isReleasedWhenClosed = false
-
-        preferencesWindow?.makeKeyAndOrderFront(nil)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

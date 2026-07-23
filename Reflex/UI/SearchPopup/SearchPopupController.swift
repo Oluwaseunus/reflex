@@ -52,7 +52,7 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
             previousApp = nil
         }
 
-        viewModel?.reset()
+        viewModel?.reset(loadRecents: false)
 
         // Idle height is known (just the search bar) — hardcode it instead of
         // measuring fittingSize pre-show. A pre-show fittingSize read tends to
