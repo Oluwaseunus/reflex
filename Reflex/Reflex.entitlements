@@ -10,10 +10,8 @@
     <key>com.apple.security.app-sandbox</key>
     <true/>
 
-    <!-- Required for Spotify Web API calls and the local OAuth callback listener -->
+    <!-- Download artwork from URLs supplied by the local Spotify app -->
     <key>com.apple.security.network.client</key>
-    <true/>
-    <key>com.apple.security.network.server</key>
     <true/>
 
     <!-- Hardened Runtime (required for notarization) -->

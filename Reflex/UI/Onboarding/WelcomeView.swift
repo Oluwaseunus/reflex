@@ -123,12 +123,12 @@ struct WelcomeStepView: View {
                 OnboardingFeatureRow(
                     icon: "sparkle.magnifyingglass",
                     title: "Quick Search",
-                    description: "Find tracks, albums, and artists with a global shortcut"
+                    description: "Type a song and press Return to play it in Spotify"
                 )
                 OnboardingFeatureRow(
-                    icon: "music.note.list",
-                    title: "Queue Access",
-                    description: "View upcoming Spotify tracks from the menu bar"
+                    icon: "timer",
+                    title: "Sleep Timer",
+                    description: "Type > in search to find sleep timer commands"
                 )
             }
             .padding(.horizontal, 60)
@@ -209,7 +209,7 @@ struct AppSelectionStepView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Reflex currently focuses on Spotify playback, search, and queue controls. Multi-app selection will return later.")
+                Text("Keep Spotify installed and signed in. Allow Reflex in Accessibility for background search, and allow Automation when macOS asks to control Spotify.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundColor(.secondary)

@@ -7,11 +7,8 @@ struct StatusBarView: View {
     @EnvironmentObject var stateManager: PlaybackStateManager
     @EnvironmentObject var preferences: PreferencesManager
     @EnvironmentObject var router: SmartRouter
-    @ObservedObject private var spotifyAuth = SpotifyAuthManager.shared
 
     @State private var showingPreferences = false
-    @State private var queueExpanded = false
-    @State private var queueTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,23 +24,7 @@ struct StatusBarView: View {
             actionsSection
         }
         .frame(width: 320)
-        .onAppear {
-            refreshSpotifyQueue()
-        }
-        .onDisappear {
-            queueTask?.cancel()
-        }
-        .onChange(of: stateManager.currentState?.trackKey) { _, _ in
-            refreshSpotifyQueue(force: true)
-        }
-        .onChange(of: spotifyAuth.isSignedIn) { _, signedIn in
-            if signedIn {
-                refreshSpotifyQueue(force: true)
-            } else {
-                queueExpanded = false
-                stateManager.updateSpotifyQueue([])
-            }
-        }
+
     }
 
     // MARK: - Header
@@ -63,10 +44,6 @@ struct StatusBarView: View {
 
     private var actionsSection: some View {
         VStack(spacing: 0) {
-            queueActionSection
-
-            Divider()
-
             Button(action: {
                 NotificationCenter.default.post(name: Notification.Name("openPreferences"), object: nil)
             }) {
@@ -108,203 +85,6 @@ struct StatusBarView: View {
         .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
     }
 
-    private var queueActionSection: some View {
-        VStack(spacing: 0) {
-            Button(action: toggleQueue) {
-                HStack {
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: 11))
-                    Text(queueExpanded ? "Hide Queue" : "Show Queue")
-                        .font(.system(size: 13))
-                    Spacer()
-                    if stateManager.isSpotifyQueueLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                            .scaleEffect(0.55)
-                            .frame(width: 14, height: 14)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundColor(queueButtonDisabled ? .secondary : .primary)
-            .focusable(false)
-            .disabled(queueButtonDisabled)
-            .help(queueHelpText)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            if queueExpanded {
-                queueItemsSection
-                    .transition(.opacity)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var queueItemsSection: some View {
-        if stateManager.isSpotifyQueueLoading &&
-            stateManager.spotifyQueueItems.isEmpty {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.65)
-                Text("Loading Queue")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-        } else {
-            VStack(spacing: 0) {
-                ForEach(Array(stateManager.spotifyQueueItems.prefix(5).enumerated()), id: \.offset) { _, item in
-                    QueueItemRow(item: item, onOpenSpotify: openSpotifyApp)
-                }
-            }
-        }
-    }
-
-    private var queueButtonDisabled: Bool {
-        if !spotifyAuth.isSignedIn { return true }
-        if stateManager.isSpotifyQueueLoading { return false }
-        return stateManager.spotifyQueueItems.isEmpty
-    }
-
-    private var queueHelpText: String {
-        if !spotifyAuth.isSignedIn {
-            return "Connect Spotify to show queue"
-        }
-        if let error = stateManager.spotifyQueueError {
-            return error
-        }
-        if stateManager.spotifyQueueItems.isEmpty {
-            return "No items in queue"
-        }
-        return queueExpanded ? "Hide queue" : "Show queue"
-    }
-
-    private func toggleQueue() {
-        if queueExpanded {
-            queueExpanded = false
-        } else {
-            queueExpanded = true
-            refreshSpotifyQueue(force: true)
-        }
-    }
-
-    private func refreshSpotifyQueue(force: Bool = false) {
-        guard spotifyAuth.isSignedIn else {
-            stateManager.updateSpotifyQueue([])
-            return
-        }
-        if !force,
-           let lastUpdate = stateManager.spotifyQueueLastUpdate,
-           Date().timeIntervalSince(lastUpdate) < 8 {
-            return
-        }
-
-        queueTask?.cancel()
-        stateManager.setSpotifyQueueLoading()
-        queueTask = Task {
-            do {
-                let items = try await SpotifyUserAPI.shared.currentQueue(limit: 5)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    stateManager.updateSpotifyQueue(items)
-                    if items.isEmpty {
-                        queueExpanded = false
-                    }
-                }
-            } catch {
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    stateManager.updateSpotifyQueue([], error: queueErrorMessage(error))
-                    queueExpanded = false
-                }
-            }
-        }
-    }
-
-    private func queueErrorMessage(_ error: Error) -> String {
-        switch error {
-        case SpotifyUserAPIError.notSignedIn:
-            return "Connect Spotify to show queue"
-        case SpotifyUserAPIError.keychain:
-            return "Connect Spotify again to show queue"
-        case SpotifyUserAPIError.rateLimited:
-            return "Spotify is rate limiting queue updates"
-        case SpotifyUserAPIError.network:
-            return "Could not load Spotify queue"
-        case SpotifyUserAPIError.httpStatus(403, _):
-            return "Reconnect Spotify to grant queue access"
-        default:
-            return "Could not load Spotify queue"
-        }
-    }
-
-    private func openSpotifyApp() {
-        let bundleID = "com.spotify.client"
-        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-            app.activate()
-            return
-        }
-
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            return
-        }
-        let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
-        config.addsToRecentItems = false
-        NSWorkspace.shared.openApplication(at: url, configuration: config) { app, _ in
-            app?.activate()
-        }
-    }
-}
-
-private struct QueueItemRow: View {
-    let item: SpotifyQueueItem
-    var onOpenSpotify: () -> Void
-
-    var body: some View {
-        Button(action: onOpenSpotify) {
-            HStack(spacing: 10) {
-                artwork
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    Text(item.artistName)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .help("Open Spotify")
-        .padding(.horizontal)
-        .padding(.vertical, 6)
-    }
-
-    @ViewBuilder
-    private var artwork: some View {
-        if let url = item.artworkURL {
-            CachedArtworkImage(url: url) {
-                Color.secondary.opacity(0.2)
-            }
-            .frame(width: 34, height: 34)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-        } else {
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color.secondary.opacity(0.2))
-                .frame(width: 34, height: 34)
-        }
-    }
 }
 
 /// Modern Now Playing card with album art, controls, and progress
@@ -388,7 +168,7 @@ struct NowPlayingCard: View {
             // Main content: Album art and controls
             HStack(spacing: 12) {
                 // Album artwork
-                Button(action: openAlbumLink) {
+                Button(action: openTrackLink) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(nsColor: .controlBackgroundColor))
@@ -409,17 +189,15 @@ struct NowPlayingCard: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
-                .disabled(!canOpenAlbum)
+                .disabled(!canOpenTrack)
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
 
                 // Right side: Track info, controls, and progress
                 VStack(alignment: .leading, spacing: 0) {
                     // Track name with hover marquee
-                    Button(action: openAlbumLink) {
+                    Button(action: openTrackLink) {
                         HoverMarquee(text: state.trackName ?? "Unknown Track")
                             .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
                             .foregroundColor(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: 18, alignment: .leading)
@@ -427,34 +205,34 @@ struct NowPlayingCard: View {
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
-                    .disabled(!canOpenAlbum)
+                    .disabled(!canOpenTrack)
 
-                    // Artist and album deep links
-                    HStack(spacing: 4) {
-                        Button(action: openArtistLink) {
-                            Text(state.artistName ?? "Unknown Artist")
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .foregroundColor(.secondary)
-                        .disabled(!canOpenArtist)
-
-                        if state.albumName != nil {
-                            Text("-")
-                                .foregroundColor(.secondary)
-
-                            Button(action: openAlbumLink) {
-                                Text(state.albumName ?? "")
-                                    .lineLimit(1)
-                            }
-                            .buttonStyle(.plain)
-                            .focusable(false)
+                    Button(action: openAlbumLink) {
+                        Text(state.albumName ?? "Unknown Album")
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .foregroundColor(.secondary)
-                            .disabled(!canOpenAlbum)
-                        }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 14, alignment: .leading)
+                            .accessibilityLabel(state.albumName ?? "Unknown Album")
                     }
-                    .font(.system(size: 11))
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .disabled(!canOpenAlbum)
+                    .padding(.top, 2)
+
+                    Button(action: openArtistLink) {
+                        HoverMarquee(text: state.artistName ?? "Unknown Artist")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 14, alignment: .leading)
+                            .accessibilityLabel(state.artistName ?? "Unknown Artist")
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .disabled(!canOpenArtist)
                     .padding(.top, 2)
 
                     Spacer()
@@ -600,9 +378,6 @@ struct NowPlayingCard: View {
                 // optimistic toggle while stateManager hasn't repolled yet.
                 isPlaying = newValue
             }
-            .onReceive(NotificationCenter.default.publisher(for: Constants.Notifications.spotifyPlaybackStartDispatched)) { _ in
-                spotifyTrackStartupGraceUntil = Date().addingTimeInterval(SpotifyPlaybackStartupGuard.quietPeriod)
-            }
         .onDisappear {
             timerCancellable?.cancel()
             timerCancellable = nil
@@ -610,6 +385,10 @@ struct NowPlayingCard: View {
     }
 
     private var canOpenAlbum: Bool {
+        state.albumName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+    }
+
+    private var canOpenTrack: Bool {
         state.trackName != nil && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
@@ -617,50 +396,25 @@ struct NowPlayingCard: View {
         state.artistName != nil && state.app?.bundleIdentifier == "com.spotify.client"
     }
 
+    private func openTrackLink() {
+        guard canOpenTrack, let app = state.app else { return }
+        // Spotify is already on the current track — just bring it to the front.
+        // (Opening a spotify:track: URI would auto-play, which we don't want.)
+        AppleScriptHelper.activateApp(app)
+    }
+
     private func openAlbumLink() {
         guard canOpenAlbum else { return }
-
-        if let uri = state.spotifyAlbumURI {
-            AppleScriptHelper.openSpotifyURI(uri)
-            return
-        }
-
-        guard let trackURI = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
-
-        Task {
-            do {
-                let albumURI = try await SpotifyUserAPI.shared.albumContextURI(forTrackURI: trackURI)
-                await MainActor.run {
-                    AppleScriptHelper.openSpotifyURI(albumURI)
-                }
-            } catch {
-                return
-            }
-        }
+        guard let album = state.albumName else { return }
+        let uri = AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
+        AppleScriptHelper.openSpotifyURI(uri)
     }
 
     private func openArtistLink() {
         guard canOpenArtist else { return }
-
-        if let uri = state.spotifyArtistURI {
-            AppleScriptHelper.openSpotifyURI(uri)
-            return
-        }
-
-        guard let trackURI = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
-
-        Task {
-            do {
-                guard let artistURI = try await SpotifyUserAPI.shared.trackContext(forTrackURI: trackURI).artistURI else {
-                    return
-                }
-                await MainActor.run {
-                    AppleScriptHelper.openSpotifyURI(artistURI)
-                }
-            } catch {
-                return
-            }
-        }
+        guard let artist = state.artistName else { return }
+        let uri = AppleScriptHelper.spotifyArtistSearchURI(artist: artist)
+        AppleScriptHelper.openSpotifyURI(uri)
     }
 
     private func progressWidth(for position: Double, totalWidth: CGFloat) -> CGFloat {
@@ -727,7 +481,6 @@ struct NowPlayingCard: View {
 
     private func loadVolumeInfo() {
         guard let app = state.app else { return }
-        if isSpotify && SpotifyPlaybackStartupGuard.isSuppressingReads { return }
         if let vol = AppleScriptHelper.getVolume(for: app) {
             currentVolume = vol
             isMuted = vol == 0
@@ -737,7 +490,6 @@ struct NowPlayingCard: View {
     private func syncVolumeState() {
         guard let app = state.app else { return }
         guard !isScrubbingVolume else { return }
-        if isSpotify && SpotifyPlaybackStartupGuard.isSuppressingReads { return }
         if let vol = AppleScriptHelper.getVolume(for: app) {
             isMuted = vol == 0
             if vol > 0 { currentVolume = vol }
@@ -829,20 +581,15 @@ struct NowPlayingCard: View {
 
     private func loadPlaybackInfo() {
         guard let app = state.app else { return }
-        let isSpotifyStartupSuppressed = isSpotify && SpotifyPlaybackStartupGuard.isSuppressingReads
 
         // Track change detection
         let trackId = "\(state.trackName ?? "")||\(state.artistName ?? "")"
         let trackChanged = trackId != lastTrackId
         if trackChanged {
             lastTrackId = trackId
-            if isSpotify && state.isPlaying && !isSpotifyStartupSuppressed {
+            if isSpotify && state.isPlaying {
                 spotifyTrackStartupGraceUntil = Date().addingTimeInterval(spotifyTrackStartupGracePeriod)
             }
-        }
-
-        if isSpotifyStartupSuppressed {
-            return
         }
 
         if isSpotify, Date() < spotifyTrackStartupGraceUntil {
@@ -870,6 +617,8 @@ struct HoverMarquee: View {
     @State private var containerWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
     @State private var isHovering: Bool = false
+    @State private var showsFullText: Bool = false
+    @State private var hoverGeneration: Int = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -877,22 +626,57 @@ struct HoverMarquee: View {
             ZStack(alignment: .leading) {
                 Text(text)
                     .lineLimit(1)
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear
-                                .onAppear { textWidth = proxy.size.width }
-                        }
-                    )
+                    .truncationMode(.tail)
+                    .frame(width: available, alignment: .leading)
+                    .opacity(showsFullText ? 0 : 1)
+
+                Text(text)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .offset(x: offset)
-                    .animation(.linear(duration: animationDuration(available: available))
-                        .repeatForever(autoreverses: false), value: offset)
+                    .opacity(showsFullText ? 1 : 0)
+
+                Color.clear
+                    .overlay(alignment: .leading) {
+                        Text(text)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear
+                                        .onAppear { textWidth = proxy.size.width }
+                                        .onChange(of: proxy.size.width) { _, newValue in
+                                            textWidth = newValue
+                                        }
+                                }
+                            )
+                            .opacity(0)
+                    }
+                    .allowsHitTesting(false)
             }
+            .frame(width: available, alignment: .leading)
             .onAppear {
                 containerWidth = available
             }
             .onChange(of: available) { _, newValue in
                 containerWidth = newValue
-                reset()
+                if isHovering {
+                    startIfNeeded()
+                } else {
+                    reset()
+                }
+            }
+            .onChange(of: text) { _, _ in
+                if isHovering {
+                    startIfNeeded()
+                } else {
+                    reset()
+                }
+            }
+            .onChange(of: textWidth) { _, _ in
+                if isHovering {
+                    startIfNeeded()
+                }
             }
             .onHover { hovering in
                 isHovering = hovering
@@ -902,27 +686,44 @@ struct HoverMarquee: View {
                     reset()
                 }
             }
+            .contentShape(Rectangle())
             .clipped()
         }
     }
 
     private func startIfNeeded() {
-        guard textWidth > containerWidth else { return }
-        offset = 0
+        hoverGeneration &+= 1
+        let generation = hoverGeneration
+        guard textWidth > containerWidth else {
+            showsFullText = false
+            resetOffset()
+            return
+        }
+
+        showsFullText = true
+        resetOffset()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard isHovering else { return }
-            offset = -(textWidth - containerWidth + 12) // slight gap
+            guard isHovering, generation == hoverGeneration else { return }
+            let distance = textWidth - containerWidth
+            guard distance > 0 else { return }
+            withAnimation(.linear(duration: Double(distance) / speed)) {
+                offset = -distance
+            }
         }
     }
 
     private func reset() {
-        offset = 0
+        hoverGeneration &+= 1
+        withTransaction(Transaction(animation: nil)) {
+            showsFullText = false
+            offset = 0
+        }
     }
 
-    private func animationDuration(available: CGFloat) -> Double {
-        let distance = max(textWidth - available, 0)
-        if distance == 0 { return 0.1 }
-        return Double(distance) / speed
+    private func resetOffset() {
+        withTransaction(Transaction(animation: nil)) {
+            offset = 0
+        }
     }
 }
 

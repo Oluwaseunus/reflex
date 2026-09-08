@@ -20,10 +20,7 @@ final class SmartRouter: ObservableObject {
     @Published var lastSpotifyVolume: Int = 50
 
     private var pollingTimer: Timer?
-    private var startupPollTimer: Timer?
-    private var suppressSpotifyPollingUntil: Date?
     private var cancellables = Set<AnyCancellable>()
-    private let spotifyStartupPollQuietPeriod = SpotifyPlaybackStartupGuard.quietPeriod
 
     init(appDetector: MediaAppDetector,
          commandSender: MediaCommandSender,
@@ -55,50 +52,6 @@ final class SmartRouter: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: Constants.Notifications.spotifyPlaybackStartDispatched)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                let item = notification.userInfo?[Constants.NotificationUserInfo.spotifyPlaybackItem] as? MediaSearchResult
-                self?.deferSpotifyStartupPoll(for: item)
-            }
-            .store(in: &cancellables)
-    }
-
-    private func deferSpotifyStartupPoll(for item: MediaSearchResult?) {
-        SpotifyPlaybackStartupGuard.suppressReadsForStartup()
-        suppressSpotifyPollingUntil = Date().addingTimeInterval(spotifyStartupPollQuietPeriod)
-        startupPollTimer?.invalidate()
-        startupPollTimer = Timer.scheduledTimer(withTimeInterval: spotifyStartupPollQuietPeriod, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            suppressSpotifyPollingUntil = nil
-            refreshSpotifyPlaybackState(reason: "startup quiet period ended")
-        }
-        startupPollTimer?.tolerance = 0.25
-        if let spotify = appDetector.app(withBundleId: spotifyBundleId), spotify.isRunning {
-            if let item {
-                publishOptimisticSpotifyState(spotify: spotify, item: item)
-            }
-        }
-        Logger.shared.debug("Paused Spotify playback polling during track startup")
-    }
-
-    private func publishOptimisticSpotifyState(spotify: MediaApp, item: MediaSearchResult) {
-        stateManager.dismissedTrackKey = nil
-        stateManager.currentArtwork = nil
-        stateManager.updateState(PlaybackState(
-            app: spotify,
-            isPlaying: true,
-            trackName: item.title,
-            artistName: item.artistName,
-            albumName: item.albumName,
-            spotifyTrackURI: item.type == .track ? item.playbackURI : nil,
-            spotifyAlbumURI: item.type == .track ? item.contextURI : (item.type == .album ? item.playbackURI : nil),
-            spotifyArtistURI: item.artistURI,
-            timestamp: Date()
-        ))
-        activeApp = spotify
-        Logger.shared.debug("Optimistically updated Spotify display: \(item.title)")
     }
 
     /// Route a media command to the appropriate app
@@ -287,9 +240,6 @@ final class SmartRouter: ObservableObject {
     func stopPolling() {
         pollingTimer?.invalidate()
         pollingTimer = nil
-        startupPollTimer?.invalidate()
-        startupPollTimer = nil
-        suppressSpotifyPollingUntil = nil
         isPolling = false
         Logger.shared.info("Stopped playback state polling")
     }
@@ -319,28 +269,14 @@ final class SmartRouter: ObservableObject {
             let previousKey = previousState?.trackKey ?? "||"
             let currentKey = trackURI ?? "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
             let trackChanged = previousKey != currentKey
-            let albumURI: String?
-            let artistURI: String?
-            let artistName: String?
-            if trackURI != nil, previousState?.spotifyTrackURI == trackURI {
-                albumURI = previousState?.spotifyAlbumURI
-                artistURI = previousState?.spotifyArtistURI
-                artistName = previousState?.artistName ?? trackInfo.artist
-            } else {
-                albumURI = nil
-                artistURI = nil
-                artistName = trackInfo.artist
-            }
 
             let state = PlaybackState(
                 app: spotify,
                 isPlaying: true,
                 trackName: trackInfo.track,
-                artistName: artistName,
+                artistName: trackInfo.artist,
                 albumName: trackInfo.album,
                 spotifyTrackURI: trackURI,
-                spotifyAlbumURI: albumURI,
-                spotifyArtistURI: artistURI,
                 timestamp: Date()
             )
 
@@ -362,9 +298,6 @@ final class SmartRouter: ObservableObject {
                 }
             }
 
-            if let trackURI, trackChanged || albumURI == nil {
-                refreshSpotifyTrackContext(for: trackURI)
-            }
         } else {
             // Preserve last known track so user can resume from the menu bar,
             // but skip if the user dismissed this track
@@ -379,8 +312,6 @@ final class SmartRouter: ObservableObject {
                     artistName: current.artistName,
                     albumName: current.albumName,
                     spotifyTrackURI: current.spotifyTrackURI,
-                    spotifyAlbumURI: current.spotifyAlbumURI,
-                    spotifyArtistURI: current.spotifyArtistURI,
                     timestamp: Date()
                 )
                 stateManager.updateState(pausedState)
@@ -390,49 +321,7 @@ final class SmartRouter: ObservableObject {
 
     /// Poll for current playback state and update routing/display accordingly (Spotify-only)
     private func pollPlaybackState() {
-        if SpotifyPlaybackStartupGuard.isSuppressingReads {
-            Logger.shared.debug("Skipping Spotify playback poll during track startup")
-            return
-        }
-        if let until = suppressSpotifyPollingUntil {
-            if Date() < until {
-                Logger.shared.debug("Skipping Spotify playback poll during track startup")
-                return
-            }
-            suppressSpotifyPollingUntil = nil
-        }
         refreshSpotifyPlaybackState(reason: "timer")
-    }
-
-    private func refreshSpotifyTrackContext(for trackURI: String) {
-        Task { [weak self] in
-            guard await SpotifyAuthManager.shared.isSignedIn else { return }
-
-            do {
-                let context = try await SpotifyUserAPI.shared.trackContext(forTrackURI: trackURI)
-                await self?.applySpotifyTrackContext(context, for: trackURI)
-            } catch {
-                Logger.shared.debug("Could not refresh Spotify track context: \(error)")
-            }
-        }
-    }
-
-    @MainActor
-    private func applySpotifyTrackContext(_ context: SpotifyTrackContext, for trackURI: String) {
-        guard let current = stateManager.currentState,
-              current.spotifyTrackURI == trackURI else { return }
-
-        stateManager.updateState(PlaybackState(
-            app: current.app,
-            isPlaying: current.isPlaying,
-            trackName: current.trackName,
-            artistName: context.artistName ?? current.artistName,
-            albumName: current.albumName,
-            spotifyTrackURI: current.spotifyTrackURI,
-            spotifyAlbumURI: context.albumURI,
-            spotifyArtistURI: context.artistURI,
-            timestamp: Date()
-        ))
     }
 
     deinit {

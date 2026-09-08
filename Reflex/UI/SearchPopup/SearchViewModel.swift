@@ -4,26 +4,11 @@ import AppKit
 
 enum SearchPopupState: Equatable {
     case idle
-    case loading
-    case results([MediaSearchResult])
-    case recents([MediaSearchResult])
     case commands([SearchCommandItem])
-    case empty
-    case error(SearchBannerKind)
-}
-
-enum SearchBannerKind: Equatable {
-    case playerNotRunning
-    case rateLimited
-    case network
-    case notAuthenticated
-    case generic
 }
 
 enum SearchCommandKind: String, Hashable {
     case restartCurrentTrack
-    case repeatCurrentSong
-    case shuffle
     case sleepTimer5Minutes
     case sleepTimer10Minutes
     case sleepTimer15Minutes
@@ -68,38 +53,24 @@ final class SearchViewModel: ObservableObject {
     @Published var state: SearchPopupState = .idle
     @Published var toast: String?
 
-    private let search: MediaSearchProvider
-    private let playback: MediaPlaybackProvider
-    private let recents: RecentPlaysStore
     private let stateManager: PlaybackStateManager?
     private let commandPrefix = ">"
     private let commandUsageKey = "search.commands.recentUse"
 
-    private var searchTask: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?
     private var sleepTimerTask: Task<Void, Never>?
-    private var isPlaybackRequestInFlight = false
 
-    init(search: MediaSearchProvider,
-         playback: MediaPlaybackProvider,
-         recents: RecentPlaysStore = .shared,
-         stateManager: PlaybackStateManager? = nil) {
-        self.search = search
-        self.playback = playback
-        self.recents = recents
+    init(stateManager: PlaybackStateManager? = nil) {
         self.stateManager = stateManager
     }
 
-    func reset(loadRecents: Bool = true) {
-        searchTask?.cancel()
-        searchTask = nil
+    func reset() {
         toastTask?.cancel()
         toastTask = nil
         toast = nil
-        isPlaybackRequestInFlight = false
         query = ""
         selectedIndex = 0
-        state = loadRecents ? idleState() : .idle
+        state = .idle
     }
 
     private func showToast(_ message: String, duration: TimeInterval = 1.6, closeAfterToast: Bool = false) {
@@ -121,8 +92,6 @@ final class SearchViewModel: ObservableObject {
 
     func onQueryChanged(_ newValue: String) {
         query = newValue
-        searchTask?.cancel()
-        searchTask = nil
 
         if isCommandQuery(newValue) {
             updateCommandResults(for: newValue)
@@ -133,52 +102,9 @@ final class SearchViewModel: ObservableObject {
         state = .idle
     }
 
-    private func idleState() -> SearchPopupState {
-        let items = recents.load()
-        return items.isEmpty ? .idle : .recents(items)
-    }
-
-    private func runSearch(for query: String) {
-        searchTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            if Task.isCancelled { return }
-            guard let self else { return }
-            do {
-                let results = try await self.search.search(query: query)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    self.selectedIndex = 0
-                    self.state = results.isEmpty ? .empty : .results(results)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                if Task.isCancelled { return }
-                let kind: SearchBannerKind
-                switch error {
-                case MediaSearchError.notAuthenticated: kind = .notAuthenticated
-                case MediaSearchError.rateLimited: kind = .rateLimited
-                case MediaSearchError.network: kind = .network
-                default: kind = .generic
-                }
-                await MainActor.run { self.state = .error(kind) }
-            }
-        }
-    }
-
     func moveSelection(by delta: Int) {
-        let items: [MediaSearchResult]
-        switch state {
-        case .results(let xs), .recents(let xs): items = xs
-        case .commands(let commands):
-            moveCommandSelection(by: delta, in: commands)
-            return
-        default: return
-        }
-        guard !items.isEmpty else { return }
-        let count = items.count
-        // Modulo that handles negative deltas so ↑ from index 0 wraps to the last item.
-        selectedIndex = ((selectedIndex + delta) % count + count) % count
+        guard case .commands(let commands) = state else { return }
+        moveCommandSelection(by: delta, in: commands)
     }
 
     func onEnterPressed() {
@@ -193,85 +119,8 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
-        SearchPopupController.shared.close(restoreFocus: true)
-        SpotifyBackgroundController.shared.play(query: trimmedQuery)
-    }
-
-    func onShiftEnterPressed() {
-        if case .commands(let commands) = state {
-            runSelectedCommand(commands)
-            return
-        }
-        guard let item = currentItem() else { return }
-        play(item: item)
-    }
-
-    private func play(item: MediaSearchResult) {
-        guard !isPlaybackRequestInFlight else { return }
-        isPlaybackRequestInFlight = true
-        SearchPopupController.shared.closeAfterPlayback()
-        Task {
-            do {
-                try await playback.play(item: item)
-                self.recents.record(item)
-            } catch MediaPlaybackError.playerNotRunning {
-                await MainActor.run {
-                    self.isPlaybackRequestInFlight = false
-                    self.state = .error(.playerNotRunning)
-                }
-            } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                await MainActor.run {
-                    self.isPlaybackRequestInFlight = false
-                    self.state = .error(.notAuthenticated)
-                }
-            } catch SpotifyUserAPIError.rateLimited {
-                await MainActor.run {
-                    self.isPlaybackRequestInFlight = false
-                    self.state = .error(.rateLimited)
-                }
-            } catch SpotifyUserAPIError.network {
-                await MainActor.run {
-                    self.isPlaybackRequestInFlight = false
-                    self.state = .error(.network)
-                }
-            } catch {
-                await MainActor.run {
-                    self.isPlaybackRequestInFlight = false
-                    self.state = .error(.generic)
-                }
-            }
-        }
-    }
-
-    /// Queue the currently-selected track. Requires sign-in; silently ignored
-    /// for non-track results (Web API's queue endpoint only accepts single tracks).
-    /// Queue keeps the popup open long enough to show confirmation, then closes.
-    func onCommandEnterPressed() {
-        if case .commands(let commands) = state {
-            runSelectedCommand(commands)
-            return
-        }
-        guard let item = currentItem(), item.type == .track else { return }
-        let provider = playback as? SpotifyPlaybackProvider
-        guard let provider else { return }
-        Task {
-            do {
-                try await provider.queue(uri: item.playbackURI)
-                await MainActor.run {
-                    self.showToast("Added \(item.title) to queue", closeAfterToast: true)
-                }
-            } catch MediaPlaybackError.playerNotRunning {
-                await MainActor.run { self.state = .error(.playerNotRunning) }
-            } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                await MainActor.run { self.state = .error(.notAuthenticated) }
-            } catch SpotifyUserAPIError.rateLimited {
-                await MainActor.run { self.state = .error(.rateLimited) }
-            } catch SpotifyUserAPIError.network {
-                await MainActor.run { self.state = .error(.network) }
-            } catch {
-                await MainActor.run { self.state = .error(.generic) }
-            }
-        }
+        let foreground = SearchPopupController.shared.closeForBackgroundPlayback()
+        SpotifyBackgroundController.shared.play(query: trimmedQuery, preserving: foreground)
     }
 
     private func updateCommandResults(for query: String) {
@@ -338,24 +187,10 @@ final class SearchViewModel: ObservableObject {
                 isEnabled: hasSpotifyTrack
             ),
             SearchCommandItem(
-                kind: .repeatCurrentSong,
-                title: "Repeat",
-                subtitle: trackSubtitle(trackName: trackName, artistName: artistName) ?? unavailable,
-                systemImage: "repeat.1",
-                isEnabled: hasSpotifyTrack
-            ),
-            SearchCommandItem(
                 kind: .restartCurrentTrack,
                 title: "Restart current track",
                 subtitle: trackSubtitle(trackName: trackName, artistName: artistName) ?? unavailable,
                 systemImage: "backward.end.fill",
-                isEnabled: hasSpotifyTrack
-            ),
-            SearchCommandItem(
-                kind: .shuffle,
-                title: "Shuffle",
-                subtitle: "Toggle shuffle playback",
-                systemImage: "shuffle",
                 isEnabled: hasSpotifyTrack
             ),
             SearchCommandItem(
@@ -458,65 +293,10 @@ final class SearchViewModel: ObservableObject {
     private func runCommand(_ kind: SearchCommandKind) {
         switch kind {
         case .restartCurrentTrack:
-            Task {
-                do {
-                    try await SpotifyUserAPI.shared.seek(toPositionMs: 0)
-                    await MainActor.run {
-                        let trackName = self.nonEmpty(self.stateManager?.currentState?.trackName) ?? "current track"
-                        self.recordCommandUse(kind)
-                        self.showToast("Restarted \(trackName)", closeAfterToast: true)
-                    }
-                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                    await MainActor.run { self.state = .error(.notAuthenticated) }
-                } catch SpotifyUserAPIError.rateLimited {
-                    await MainActor.run { self.state = .error(.rateLimited) }
-                } catch SpotifyUserAPIError.network {
-                    await MainActor.run { self.state = .error(.network) }
-                } catch {
-                    await MainActor.run { self.state = .error(.generic) }
-                }
-            }
-
-        case .repeatCurrentSong:
-            Task {
-                do {
-                    try await SpotifyUserAPI.shared.setRepeatMode(.track)
-                    await MainActor.run {
-                        let trackName = self.nonEmpty(self.stateManager?.currentState?.trackName) ?? "current song"
-                        self.recordCommandUse(kind)
-                        self.showToast("Repeating \(trackName)", closeAfterToast: true)
-                    }
-                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                    await MainActor.run { self.state = .error(.notAuthenticated) }
-                } catch SpotifyUserAPIError.rateLimited {
-                    await MainActor.run { self.state = .error(.rateLimited) }
-                } catch SpotifyUserAPIError.network {
-                    await MainActor.run { self.state = .error(.network) }
-                } catch {
-                    await MainActor.run { self.state = .error(.generic) }
-                }
-            }
-
-        case .shuffle:
-            Task {
-                do {
-                    let snapshot = try await SpotifyUserAPI.shared.playbackState()
-                    let nextShuffleState = !(snapshot?.shuffleState ?? false)
-                    try await SpotifyUserAPI.shared.setShuffle(nextShuffleState)
-                    await MainActor.run {
-                        self.recordCommandUse(kind)
-                        self.showToast(nextShuffleState ? "Shuffle on" : "Shuffle off", closeAfterToast: true)
-                    }
-                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                    await MainActor.run { self.state = .error(.notAuthenticated) }
-                } catch SpotifyUserAPIError.rateLimited {
-                    await MainActor.run { self.state = .error(.rateLimited) }
-                } catch SpotifyUserAPIError.network {
-                    await MainActor.run { self.state = .error(.network) }
-                } catch {
-                    await MainActor.run { self.state = .error(.generic) }
-                }
-            }
+            guard let app = currentSpotifyApp() else { return }
+            guard AppleScriptHelper.setPlaybackPosition(0, for: app) else { return }
+            recordCommandUse(kind)
+            showToast("Restarted current track", closeAfterToast: true)
 
         case .sleepTimer5Minutes:
             setSleepTimer(after: 5 * 60, label: "5 minutes", command: kind)
@@ -548,65 +328,19 @@ final class SearchViewModel: ObservableObject {
 
         case .goToAlbum:
             guard let state = stateManager?.currentState,
-                  isSpotify(state),
-                  nonEmpty(state.albumName) != nil else { return }
-            if let uri = state.spotifyAlbumURI {
-                recordCommandUse(kind)
-                AppleScriptHelper.openSpotifyURI(uri)
-                SearchPopupController.shared.close(restoreFocus: false)
-                return
-            }
-            guard let trackURI = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
-            Task {
-                do {
-                    let albumURI = try await SpotifyUserAPI.shared.albumContextURI(forTrackURI: trackURI)
-                    await MainActor.run {
-                        self.recordCommandUse(kind)
-                        AppleScriptHelper.openSpotifyURI(albumURI)
-                        SearchPopupController.shared.close(restoreFocus: false)
-                    }
-                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                    await MainActor.run { self.state = .error(.notAuthenticated) }
-                } catch SpotifyUserAPIError.rateLimited {
-                    await MainActor.run { self.state = .error(.rateLimited) }
-                } catch SpotifyUserAPIError.network {
-                    await MainActor.run { self.state = .error(.network) }
-                } catch {
-                    await MainActor.run { self.state = .error(.generic) }
-                }
-            }
+                  isSpotify(state), let album = nonEmpty(state.albumName) else { return }
+            recordCommandUse(kind)
+            AppleScriptHelper.openSpotifyURI(
+                AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
+            )
+            SearchPopupController.shared.close(restoreFocus: false)
 
         case .goToArtist:
             guard let state = stateManager?.currentState,
-                  isSpotify(state),
-                  nonEmpty(state.artistName) != nil else { return }
-            if let uri = state.spotifyArtistURI {
-                recordCommandUse(kind)
-                AppleScriptHelper.openSpotifyURI(uri)
-                SearchPopupController.shared.close(restoreFocus: false)
-                return
-            }
-            guard let trackURI = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
-            Task {
-                do {
-                    guard let artistURI = try await SpotifyUserAPI.shared.trackContext(forTrackURI: trackURI).artistURI else {
-                        return
-                    }
-                    await MainActor.run {
-                        self.recordCommandUse(kind)
-                        AppleScriptHelper.openSpotifyURI(artistURI)
-                        SearchPopupController.shared.close(restoreFocus: false)
-                    }
-                } catch SpotifyUserAPIError.notSignedIn, SpotifyUserAPIError.keychain(_) {
-                    await MainActor.run { self.state = .error(.notAuthenticated) }
-                } catch SpotifyUserAPIError.rateLimited {
-                    await MainActor.run { self.state = .error(.rateLimited) }
-                } catch SpotifyUserAPIError.network {
-                    await MainActor.run { self.state = .error(.network) }
-                } catch {
-                    await MainActor.run { self.state = .error(.generic) }
-                }
-            }
+                  isSpotify(state), let artist = nonEmpty(state.artistName) else { return }
+            recordCommandUse(kind)
+            AppleScriptHelper.openSpotifyURI(AppleScriptHelper.spotifyArtistSearchURI(artist: artist))
+            SearchPopupController.shared.close(restoreFocus: false)
         }
     }
 
@@ -675,21 +409,4 @@ final class SearchViewModel: ObservableObject {
         return trimmed
     }
 
-    private func currentItem() -> MediaSearchResult? {
-        let items: [MediaSearchResult]
-        switch state {
-        case .results(let xs), .recents(let xs): items = xs
-        default: return nil
-        }
-        guard items.indices.contains(selectedIndex) else { return nil }
-        return items[selectedIndex]
-    }
-
-    func openSpotifyApp() {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") {
-            let config = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
-        }
-        SearchPopupController.shared.close()
-    }
 }

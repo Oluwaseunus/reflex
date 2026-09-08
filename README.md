@@ -1,70 +1,47 @@
 # Reflex - macOS Spotify Menu Bar Controller
 
-Reflex is a macOS menu bar application for controlling Spotify playback, search, and queue access without switching away from your current app.
+Reflex controls the installed Spotify desktop app without requiring a Spotify developer account or a connection to the Spotify Web API.
 
 ## Features
 
-- **Spotify Search**: Find tracks, albums, and artists from a global shortcut
-- **Menu Bar Controls**: Play, pause, skip, scrub, and adjust Spotify playback
-- **Queue View**: See upcoming Spotify tracks from the menu bar
-- **Rich Status Display**: Shows "Now Playing" info with track details in the menu bar
-- **Launch at Login**: Option to start Reflex automatically
+- **Background search/play**: Open the global shortcut, type a song and optionally its artist, and press Return. Reflex sets Spotify's search field through Accessibility and submits Return directly to Spotify's process. It reads the matching track link and presses Play on that exact search-result row. The popup closes without activating another application. Success requires the same track to be playing, not merely loaded and paused.
+- **Menu-bar controls**: Play/pause, skip, replay, seek, and adjust volume through local AppleScript and Scripting Bridge.
+- **Now playing**: Display locally read track information and artwork.
+- **Command palette**: Type `>` in search for restart, navigation, and sleep timer commands.
+- **Preferences**: Configure the shortcut, menu-bar display, and launch at login.
 
-## Requirements
+The popup does not currently display music search results or recent plays. Queue display, queue insertion, repeat and shuffle commands have been removed. Album and artist navigation opens Spotify search using local metadata. See [the removal record](docs/removals.md) for the intended behavior of removed features and possible future local replacements.
 
-- macOS 14 or later
-- Spotify desktop app
-- Spotify account authorization for search, playback, and queue features
+## Requirements and permissions
 
-## Building from Source
+- macOS 14 or later.
+- Spotify desktop app, signed into a Spotify account.
+- **Accessibility** permission for Reflex to inspect and operate Spotify's interface during background search/play. Enable Reflex in System Settings → Privacy & Security → Accessibility.
+- **Automation** permission to control Spotify when macOS prompts for it.
 
-### Prerequisites
+Spotify's Accessibility layout can change. Search-field discovery currently uses English labels; the result matcher reads track and artist links rather than Play-button labels. Other Spotify interface languages are not currently verified. Background search failures currently appear in Console logs; a visible recovery flow remains to be implemented.
 
-- Xcode 15.0 or later
-- macOS 14.0 or later (for development)
+## Build and run
 
-### Setup Instructions
+Open the included `Reflex.xcodeproj` to build in Xcode, or compile the Swift package:
 
-1. **Open Xcode** and create a new project:
-   - Select "macOS" → "App"
-   - Product Name: `Reflex`
-   - Team: Your development team
-   - Organization Identifier: `com.yourcompany`
-   - Interface: SwiftUI
-   - Language: Swift
+```sh
+swift build
+```
 
-2. **Configure the project:**
-   - Set Deployment Target to macOS 14
-   - Enable App Sandbox in Signing & Capabilities
-   - Add Apple Events automation, outgoing network, and incoming network entitlements
+For the local development installation:
 
-3. **Import source files:**
-   - Delete the default `ContentView.swift` and `ReflexApp.swift`
-   - Drag all files from the `Reflex/` folder into your Xcode project
-   - Make sure "Copy items if needed" is checked
+```sh
+./save
+```
 
-4. **Configure Info.plist:**
-   - Replace the generated Info.plist with the provided one
-   - Or merge the keys from the provided Info.plist
+This builds a release executable, assembles and signs the app, replaces `/Applications/Reflex.app`, and launches it. The script uses the local `Reflex Dev` signing identity when available and otherwise falls back to ad-hoc signing. No API credentials or generated credential source are required.
 
-5. **Add Resources:**
-   - Add `MediaAppDefinitions.json` to the project
-   - Ensure it's included in "Copy Bundle Resources" build phase
+The Xcode build uses `Reflex/Reflex.entitlements`; the local installer signs without those entitlements.
 
-6. **Configure Entitlements:**
-   - Add the provided `Reflex.entitlements` file
-   - Set it in Build Settings → Code Signing Entitlements
+### Local distribution build
 
-7. **Build and Run:**
-   - Select your Mac as the destination
-   - Build (⌘B) and Run (⌘R)
-
-### Local Distribution Build
-
-To create a DMG that Gatekeeper accepts on other Macs, the app must be signed
-with a `Developer ID Application` certificate, notarized by Apple, and stapled.
-
-One-time notarization credential setup:
+To create a DMG that Gatekeeper accepts on other Macs, store notarization credentials once:
 
 ```sh
 xcrun notarytool store-credentials reflex-notary \
@@ -73,107 +50,25 @@ xcrun notarytool store-credentials reflex-notary \
   --password "app-specific-password"
 ```
 
-Then build the distributable DMG:
+Then build, sign, notarize, and staple the distributable DMG:
 
 ```sh
 NOTARY_KEYCHAIN_PROFILE=reflex-notary Scripts/build-dist.sh
 ```
 
-If more than one Developer ID Application certificate is installed, choose one
-explicitly:
+If more than one Developer ID Application certificate is installed, set `SIGN_IDENTITY` explicitly. The finished artifact is written to `dist/Reflex.dmg`.
 
-```sh
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-NOTARY_KEYCHAIN_PROFILE=reflex-notary \
-Scripts/build-dist.sh
-```
+## Code layout
 
-The finished artifact is written to `dist/Reflex.dmg`.
-
-### Project Structure
-
-```
-Reflex/
-├── ReflexApp.swift              # Main app entry point
-├── Info.plist                   # App configuration
-├── Reflex.entitlements          # App entitlements
-│
-├── Models/
-│   ├── MediaApp.swift           # Media app model
-│   ├── MediaCommand.swift       # Command definitions
-│   ├── PlaybackState.swift      # Playback state tracking
-│   └── AppPreferences.swift     # User preferences
-│
-├── Managers/
-│   ├── PreferencesManager.swift     # Preferences persistence
-│   ├── MediaAppDetector.swift       # App discovery
-│   ├── MediaCommandSender.swift     # AppleScript commands
-│   ├── SmartRouter.swift            # Spotify command logic
-│   ├── SpotifyBridge.swift          # Spotify API bridge
-│   └── StatusBarManager.swift       # Menu bar UI
-│
-├── Spotify/
-│   ├── SpotifyAuthManager.swift
-│   ├── SpotifyPlaybackProvider.swift
-│   ├── SpotifySearchProvider.swift
-│   └── SpotifyUserAPI.swift
-│
-├── UI/
-│   ├── StatusBar/
-│   │   └── StatusBarView.swift
-│   ├── Preferences/
-│   │   ├── PreferencesWindow.swift
-│   │   ├── GeneralPreferencesView.swift
-│   │   ├── ShortcutsPreferencesView.swift
-│   │   └── AboutPreferencesView.swift
-│   └── Onboarding/
-│       └── WelcomeView.swift
-│
-├── Utilities/
-│   ├── Constants.swift
-│   ├── Logger.swift
-│   └── AppleScriptHelper.swift
-│
-└── Resources/
-    └── MediaAppDefinitions.json
-```
-
-## Usage
-
-1. **First Launch**: Connect your Spotify account in Preferences
-2. **Menu Bar**: Click the music note icon to access playback controls
-3. **Search**: Use the configured global shortcut to open Spotify search
-4. **Preferences**: Configure launch, display, feedback, and shortcut options
-
-## Permissions
-
-Reflex uses Apple Events automation to control Spotify playback through AppleScript. macOS may prompt you to allow Reflex to control Spotify the first time a playback command is sent.
-
-## Supported Apps
-
-- Spotify
+- `Reflex/BackgroundControl/`: background Spotify Accessibility search/play.
+- `Reflex/Managers/`: local app detection, playback routing, Scripting Bridge, preferences and menu-bar management.
+- `Reflex/UI/SearchPopup/`: shortcut panel and local command palette.
+- `Reflex/UI/StatusBar/`: now-playing display and playback controls.
+- `Reflex/Utilities/`: local AppleScript helpers, artwork cache, logging and constants.
+- `docs/removals.md`: removed features, original intentions and retained behavior.
 
 ## Troubleshooting
 
-### Spotify controls not working
-1. Ensure Spotify is installed and running
-2. Allow Apple Events automation if macOS prompts for it
-3. Try restarting Reflex and Spotify
+For background search, check Accessibility permission, Spotify's signed-in state and interface language. For playback controls, check Automation permission. Look for Reflex messages in Console when a command fails.
 
-### Search is unavailable
-1. Open Preferences → General
-2. Connect your Spotify account
-3. Confirm this build includes Spotify API credentials
-
-### Commands not sending
-1. Verify Spotify responds to AppleScript control
-2. Check Console.app for error messages
-3. Try restarting Spotify
-
-## License
-
-MIT License - See LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or pull request on GitHub.
+Artwork may be downloaded from the artwork URL supplied by the local Spotify app. This does not use Spotify's Web API.

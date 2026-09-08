@@ -23,6 +23,11 @@ let package = Package(
             resources: [
                 .process("Resources/MediaAppDefinitions.json")
             ]
+        ),
+        .testTarget(
+            name: "ReflexTests",
+            dependencies: ["Reflex"],
+            path: "Tests/ReflexTests"
         )
     ]
 )

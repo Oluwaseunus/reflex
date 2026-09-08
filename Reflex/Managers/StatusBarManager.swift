@@ -190,8 +190,8 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
-        // Activate the app and make the popover window key so gestures work immediately
-        NSApp.activate(ignoringOtherApps: true)
+        // Make the popover key without activating the app. Activating a freshly
+        // launched SwiftUI app can also open its Settings scene.
         popover?.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
 
         startEventMonitor()
@@ -203,6 +203,11 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         restoreFocusOnClose = restoreFocus
         popover?.performClose(nil)
         Logger.shared.debug("Popover closed")
+    }
+
+    func prepareForTermination() {
+        restoreFocusOnClose = false
+        previousApp = nil
     }
 
     /// Show context menu

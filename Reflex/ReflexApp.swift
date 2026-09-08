@@ -2,22 +2,12 @@ import SwiftUI
 import Combine
 
 @main
-struct ReflexApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        // No main window - this is a menu bar app
-        Settings {
-            EmptyView()
-        }
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Preferences...") {
-                    appDelegate.showPreferences()
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-        }
+enum ReflexApp {
+    static func main() {
+        let app = NSApplication.shared
+        let appDelegate = AppDelegate()
+        app.delegate = appDelegate
+        app.run()
     }
 }
 
@@ -51,6 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("Reflex starting...")
 
+        setupMainMenu()
+
         // Initialize managers in dependency order
         initializeManagers()
 
@@ -78,12 +70,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         smartRouter?.stopPolling()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        statusBarManager?.prepareForTermination()
+        SearchPopupController.shared.prepareForTermination()
+        return .terminateNow
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Keep running when windows are closed (menu bar app)
         return false
     }
 
     // MARK: - Initialization
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+
+        let preferencesItem = NSMenuItem(
+            title: "Preferences...",
+            action: #selector(showPreferences),
+            keyEquivalent: ","
+        )
+        preferencesItem.target = self
+        appMenu.addItem(preferencesItem)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        NSApp.mainMenu = mainMenu
+    }
 
     private func initializeManagers() {
         logger.debug("Initializing managers...")
@@ -138,7 +153,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(appDetector)
 
         onboardingWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 580),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -156,33 +171,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func showPreferences() {
+    @objc func showPreferences() {
         logger.info("Showing preferences")
 
-        // If window exists, just bring it to front
-        if let window = preferencesWindow {
-            window.makeKeyAndOrderFront(nil)
+        if let preferencesWindow {
+            preferencesWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
         let contentView = PreferencesWindow()
             .environmentObject(preferencesManager)
-            .environmentObject(appDetector)
 
-        preferencesWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
+        window.title = "Reflex Preferences"
+        window.center()
+        window.contentView = NSHostingView(rootView: contentView)
+        window.isReleasedWhenClosed = false
+        preferencesWindow = window
 
-        preferencesWindow?.title = "Reflex Preferences"
-        preferencesWindow?.center()
-        preferencesWindow?.contentView = NSHostingView(rootView: contentView)
-        preferencesWindow?.isReleasedWhenClosed = false
-
-        preferencesWindow?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

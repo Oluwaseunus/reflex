@@ -100,9 +100,6 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
-            if SpotifyPlaybackStartupGuard.isSuppressingReads {
-                return (nil, nil, nil)
-            }
             script = """
             tell application "Spotify"
                 if it is running and player state is playing then
@@ -266,7 +263,6 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
-            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             script = """
             tell application "Spotify"
                 if it is running then
@@ -298,7 +294,6 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
-            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             script = """
             tell application "Spotify"
                 if it is running then
@@ -329,7 +324,6 @@ final class AppleScriptHelper {
     static func getArtworkData(from app: MediaApp) async -> Data? {
         switch app.bundleIdentifier {
         case "com.spotify.client":
-            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             let script = """
             tell application "Spotify"
                 if it is running then
@@ -441,7 +435,6 @@ final class AppleScriptHelper {
         let script: String
         switch app.bundleIdentifier {
         case "com.spotify.client":
-            if SpotifyPlaybackStartupGuard.isSuppressingReads { return nil }
             script = """
             tell application "Spotify"
                 if it is running then
@@ -484,6 +477,22 @@ final class AppleScriptHelper {
     }
 
     // MARK: - Spotify Deep Links
+
+    /// A loaded but paused track is not successful playback.
+    static func isSpotifyPlayingTrack(_ uri: String) -> Bool {
+        guard let uri = SpotifySearchIdentity.uri(from: uri, type: "track") else { return false }
+        let result = execute("""
+        with timeout of 1 second
+            tell application "Spotify"
+                if not running then return ""
+                if player state is not playing then return ""
+                return spotify url of current track
+            end tell
+        end timeout
+        """)
+        guard let output = result.output else { return false }
+        return normalizeSpotifyTrackURI(output) == uri
+    }
 
     /// Open a Spotify URI/URL (e.g. spotify:album:..., spotify:artist:..., spotify:search:..., https://open.spotify.com/...)
     static func openSpotifyURI(_ uri: String) {
