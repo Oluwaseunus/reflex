@@ -82,6 +82,7 @@ final class SpotifyBackgroundController: ObservableObject {
                     query: query, in: application, preserving: expectedForeground
                 ) else {
                     logAccessibilitySummary(in: application, query: query)
+                    logSearchURLDiagnostics(in: application, query: query)
                     throw BackgroundControlError.playableTrackNotFound
                 }
                 try verifyForeground(expectedForeground)
@@ -111,6 +112,7 @@ final class SpotifyBackgroundController: ObservableObject {
                     timeout: playbackTimeout,
                     condition: { AppleScriptHelper.isSpotifyPlayingTrack(result.trackURI) }
                 ) else {
+                    logger.warning("Spotify playback verification diagnostic \(AppleScriptHelper.spotifyPlaybackFailureDiagnostic(expectedURI: result.trackURI))")
                     throw BackgroundControlError.playbackNotVerified(query)
                 }
                 try verifyForeground(expectedForeground)
@@ -641,6 +643,113 @@ final class SpotifyBackgroundController: ObservableObject {
             return role == kAXComboBoxRole && stringAttribute(kAXDescriptionAttribute, of: $0) == "What do you want to play?"
         }).map { stringAttribute(kAXValueAttribute, of: $0) == query } ?? false
         logger.error("Spotify search run=\(currentRunID) timed out: elements=\(elements.count), tables=\(tables), trackLinks=\(links), routeMatches=\(routeMatches), fieldMatches=\(fieldMatches)")
+    }
+
+    private func logSearchURLDiagnostics(in application: AXUIElement, query: String) {
+        var candidates: [AXUIElement] = []
+        var seen: Set<String> = []
+        for (rootIndex, root) in spotifyAccessibilityRoots(in: application).enumerated() {
+            for element in accessibilityElements(in: root, limit: rootTraversalLimit) {
+                let role = stringAttribute(kAXRoleAttribute, of: element) ?? ""
+                guard role == "AXLink" || role == "AXWebArea" || role == "AXGroup" else { continue }
+                let label = linkLabel(element)
+                let key = "\(role)|\(label)|\(CFHash(element))"
+                guard seen.insert(key).inserted else { continue }
+                candidates.append(element)
+                if candidates.count >= rootTraversalLimit { break }
+            }
+            var document: CFTypeRef?
+            let documentStatus = AXUIElementCopyAttributeValue(
+                root, kAXDocumentAttribute as CFString, &document
+            )
+            if documentStatus == .success, let document,
+               let evidence = spotifySearchURLEvidence(document, query: query) {
+                let role = stringAttribute(kAXRoleAttribute, of: root) ?? "unknown"
+                let label = linkLabel(root)
+                logger.info("Spotify URL diagnostic run=\(currentRunID) rootIndex=\(rootIndex) role=\(role) label=\(label) AXDocument \(evidence)")
+            }
+        }
+
+        var loggedURLs = 0
+        for element in candidates where loggedURLs < 40 {
+            let role = stringAttribute(kAXRoleAttribute, of: element) ?? "unknown"
+            let label = linkLabel(element)
+            for attribute in [kAXURLAttribute, kAXValueAttribute] where loggedURLs < 40 {
+                var raw: CFTypeRef?
+                let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &raw)
+                guard status == .success, let raw,
+                      let evidence = spotifySearchURLEvidence(raw, query: query) else { continue }
+                logger.info("Spotify URL diagnostic run=\(currentRunID) role=\(role) label=\(label) attribute=\(attribute) \(evidence)")
+                loggedURLs += 1
+            }
+        }
+        logger.info("Spotify URL diagnostic run=\(currentRunID) boundedElements=\(candidates.count) matchingSearchURLs=\(loggedURLs)")
+
+        var loggedRows = 0
+        for root in spotifyAccessibilityRoots(in: application) {
+            let elements = accessibilityElements(in: root, limit: rootTraversalLimit)
+            for table in elements where stringAttribute(kAXRoleAttribute, of: table) == kAXTableRole
+                && linkLabel(table) == "Search results" {
+                let rows = accessibilityElements(in: table, limit: tableTraversalLimit).filter {
+                    stringAttribute(kAXRoleAttribute, of: $0) == kAXRowRole
+                }
+                for row in rows.prefix(3) {
+                    let rowElements = accessibilityElements(in: row, limit: rowTraversalLimit)
+                    let links = rowElements.filter { stringAttribute(kAXRoleAttribute, of: $0) == "AXLink" }
+                    guard let track = links.first(where: { spotifyURI(of: $0, type: "track") != nil }),
+                          let uri = spotifyURI(of: track, type: "track") else { continue }
+                    let artists = links.filter { !CFEqual($0, track) }.map(linkLabel).filter { !$0.isEmpty }
+                    logger.info("Spotify URL diagnostic run=\(currentRunID) Search results row title=\(linkLabel(track)) artists=\(artists.joined(separator: ", ")) uri=\(uri)")
+                    loggedRows += 1
+                }
+                logger.info("Spotify URL diagnostic run=\(currentRunID) Search results table topRows=\(min(rows.count, 3)) songRowsLogged=\(loggedRows)")
+                return
+            }
+        }
+        logger.info("Spotify URL diagnostic run=\(currentRunID) Search results table not exposed")
+    }
+
+    private func spotifySearchURLEvidence(_ raw: CFTypeRef, query: String) -> String? {
+        let typeID = CFGetTypeID(raw)
+        let typeName = CFCopyTypeIDDescription(typeID) as String
+        let string: String
+        let conversion: String
+        if typeID == CFURLGetTypeID() {
+            string = CFURLGetString((raw as! CFURL)) as String
+            conversion = "CFURLGetString"
+        } else if let url = raw as? URL {
+            string = url.absoluteString
+            conversion = "URL.absoluteString"
+        } else if let value = raw as? String {
+            string = value
+            conversion = "String"
+        } else if let value = raw as? NSString {
+            string = value as String
+            conversion = "NSString"
+        } else {
+            return nil
+        }
+        let directComponents = URLComponents(string: string)
+        let components: URLComponents
+        if let directComponents, directComponents.host != nil {
+            components = directComponents
+        } else if let prefixedComponents = URLComponents(string: "https://\(string)"),
+                  let prefixedHost = prefixedComponents.host?.lowercased(),
+                  prefixedHost == "spotify.com" || prefixedHost.hasSuffix(".spotify.com") {
+            // Spotify AX link values commonly omit the URL scheme (for example,
+            // xpui.app.spotify.com/search/...).
+            components = prefixedComponents
+        } else {
+            return nil
+        }
+        guard let host = components.host?.lowercased(),
+              (host == "spotify.com" || host.hasSuffix(".spotify.com")),
+              components.path.lowercased().contains("search") else { return nil }
+        let route = SpotifySearchIdentity.searchQuery(from: string)
+        let normalizedRoute = route.map { normalizedSearchQuery($0) } ?? "unparsed"
+        let matches = route.map { normalizedSearchQuery($0) == normalizedSearchQuery(query) } ?? false
+        let path = components.percentEncodedPath
+        return "copyStatus=success cfTypeID=\(typeID) cfType=\(typeName) conversion=\(conversion) host=\(host) path=\(path) routeTerm=\(normalizedRoute) requestedQueryMatches=\(matches)"
     }
 
     private func spotifyAccessibilityElements(
