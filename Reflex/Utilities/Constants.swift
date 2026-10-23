@@ -13,6 +13,7 @@ enum Constants {
         static let preferences = "com.reflex.preferences"
         static let hasCompletedOnboarding = "com.reflex.hasCompletedOnboarding"
         static let lastSelectedApp = "com.reflex.lastSelectedApp"
+        static let lastSettingsPane = "com.reflex.lastSettingsPane"
     }
 
     /// App configuration

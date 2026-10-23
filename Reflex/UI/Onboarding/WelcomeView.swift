@@ -289,7 +289,7 @@ struct CompletionStepView: View {
             HStack {
                 Image(systemName: "lightbulb")
                     .foregroundColor(.yellow)
-                Text("Click the menu bar icon to switch between apps or access preferences")
+                Text("Click the menu bar icon to switch between apps or open Settings")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

@@ -53,7 +53,7 @@ struct StatusBarView: View {
                 HStack {
                     Image(systemName: "gear")
                         .font(.system(size: 11))
-                    Text("Preferences...")
+                    Text("Settings...")
                         .font(.system(size: 13))
                     Spacer()
                 }

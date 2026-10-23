@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Singleton Managers
 
     private let preferencesManager = PreferencesManager.shared
+    private let settingsNavigation = SettingsNavigationModel()
     private let logger = Logger.shared
 
     // MARK: - Instance Managers
@@ -89,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
 
         let preferencesItem = NSMenuItem(
-            title: "Preferences...",
+            title: "Settings...",
             action: #selector(showPreferences),
             keyEquivalent: ","
         )
@@ -172,24 +173,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showPreferences() {
-        logger.info("Showing preferences")
+        logger.info("Showing settings")
 
         if let preferencesWindow {
+            updateSettingsWindow(for: settingsNavigation.selectedPane)
             preferencesWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let contentView = PreferencesWindow()
+        let contentView = PreferencesWindow(navigation: settingsNavigation)
             .environmentObject(preferencesManager)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Reflex Preferences"
+        configureSettingsToolbar(for: window)
+        updateSettingsWindow(for: settingsNavigation.selectedPane, window: window)
         window.center()
         window.contentView = NSHostingView(rootView: contentView)
         window.isReleasedWhenClosed = false
@@ -197,6 +200,71 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func configureSettingsToolbar(for window: NSWindow) {
+        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("com.reflex.settings"))
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.displayMode = .iconAndLabel
+        toolbar.selectedItemIdentifier = settingsNavigation.selectedPane.toolbarItemIdentifier
+        window.toolbarStyle = .preference
+        window.toolbar = toolbar
+    }
+
+    private func updateSettingsWindow(for pane: SettingsPane, window: NSWindow? = nil) {
+        let window = window ?? preferencesWindow
+        window?.title = pane.rawValue
+        window?.toolbar?.selectedItemIdentifier = pane.toolbarItemIdentifier
+    }
+
+    @objc private func selectSettingsPane(_ sender: NSToolbarItem) {
+        guard let pane = SettingsPane(toolbarItemIdentifier: sender.itemIdentifier) else { return }
+        settingsNavigation.selectedPane = pane
+        updateSettingsWindow(for: pane)
+    }
+}
+
+private extension SettingsPane {
+    var toolbarItemIdentifier: NSToolbarItem.Identifier {
+        NSToolbarItem.Identifier("com.reflex.settings.\(rawValue.lowercased())")
+    }
+
+    init?(toolbarItemIdentifier: NSToolbarItem.Identifier) {
+        guard let pane = Self.allCases.first(where: { $0.toolbarItemIdentifier == toolbarItemIdentifier }) else {
+            return nil
+        }
+        self = pane
+    }
+}
+
+extension AppDelegate: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.toolbarItemIdentifier)
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard let pane = SettingsPane(toolbarItemIdentifier: itemIdentifier) else { return nil }
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = pane.rawValue
+        item.paletteLabel = pane.rawValue
+        item.image = NSImage(systemSymbolName: pane.icon, accessibilityDescription: pane.rawValue)
+        item.target = self
+        item.action = #selector(selectSettingsPane(_:))
+        return item
     }
 }
 

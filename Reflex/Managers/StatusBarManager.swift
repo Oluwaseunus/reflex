@@ -235,9 +235,9 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Preferences
+        // Settings
         menu.addItem(NSMenuItem(
-            title: "Preferences...",
+            title: "Settings...",
             action: #selector(openPreferences),
             keyEquivalent: ","
         ))
