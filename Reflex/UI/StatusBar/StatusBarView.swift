@@ -92,6 +92,7 @@ struct StatusBarView: View {
 
 /// Modern Now Playing card with album art, controls, and progress
 struct NowPlayingCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// When the ⏮ button is clicked, positions strictly less than this
     /// threshold (in seconds) go to the previous track; positions at or
     /// above it restart the current track. Matches Spotify's native UI
