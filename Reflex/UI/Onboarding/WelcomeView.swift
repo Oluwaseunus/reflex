@@ -1,9 +1,12 @@
 import SwiftUI
+import AppKit
 
 /// Main onboarding flow shown on first launch
 struct WelcomeView: View {
     @State private var currentStep: OnboardingStep = .welcome
+    @State private var animateStepChange = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @EnvironmentObject var preferences: PreferencesManager
 
@@ -17,19 +20,13 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Content
-            Group {
-                switch currentStep {
-                case .welcome:
-                    WelcomeStepView()
-                case .permissions:
-                    AutomationPermissionStepView()
-                case .selectApps:
-                    AppSelectionStepView()
-                case .complete:
-                    CompletionStepView()
-                }
+            ZStack {
+                stepContent
+                    .id(currentStep)
+                    .transition(.opacity.combined(with: .scale(scale: reduceMotion ? 1 : 0.97)))
             }
             .frame(maxHeight: .infinity)
+            .animation(animateStepChange ? InterfaceMotion.onboardingPage : nil, value: currentStep)
 
             Divider()
 
@@ -42,15 +39,13 @@ struct WelcomeView: View {
     private var navigationBar: some View {
         HStack {
             // Back button
-            if currentStep != .welcome {
-                Button("Back") {
-                    withAnimation {
-                        if let previous = OnboardingStep(rawValue: currentStep.rawValue - 1) {
-                            currentStep = previous
-                        }
-                    }
-                }
+            Button("Back") {
+                changeStep(by: -1)
             }
+            .frame(width: 90, alignment: .leading)
+            .opacity(currentStep == .welcome ? 0 : 1)
+            .disabled(currentStep == .welcome)
+            .accessibilityHidden(currentStep == .welcome)
 
             // Progress indicators
             Spacer()
@@ -64,23 +59,39 @@ struct WelcomeView: View {
             Spacer()
 
             // Next/Finish button
-            if currentStep == .complete {
-                Button("Get Started") {
+            Button(currentStep == .complete ? "Get Started" : "Next") {
+                if currentStep == .complete {
                     completeOnboarding()
+                } else {
+                    changeStep(by: 1)
                 }
-                .buttonStyle(.borderedProminent)
-            } else {
-                Button("Next") {
-                    withAnimation {
-                        if let next = OnboardingStep(rawValue: currentStep.rawValue + 1) {
-                            currentStep = next
-                        }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
             }
+            .buttonStyle(.borderedProminent)
+            .frame(width: 90, alignment: .trailing)
         }
         .padding()
+    }
+
+    @ViewBuilder
+    private var stepContent: some View {
+        switch currentStep {
+        case .welcome:
+            WelcomeStepView()
+        case .permissions:
+            AutomationPermissionStepView()
+        case .selectApps:
+            AppSelectionStepView()
+        case .complete:
+            CompletionStepView()
+        }
+    }
+
+    private func changeStep(by offset: Int) {
+        guard let next = OnboardingStep(rawValue: currentStep.rawValue + offset) else { return }
+        // Keyboard navigation stays immediate, even on this rare first-run flow.
+        let eventType = NSApp.currentEvent?.type
+        animateStepChange = eventType == .leftMouseUp || eventType == .leftMouseDown
+        currentStep = next
     }
 
     private func completeOnboarding() {

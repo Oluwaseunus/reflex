@@ -291,8 +291,12 @@ struct NowPlayingCard: View {
                                 Circle()
                                     .fill(Color.primary)
                                     .frame(width: 10, height: 10)
+                                    .animation(InterfaceMotion.hoverReveal) { content in
+                                        content
+                                            .opacity(isHoveringProgress || isScrubbing ? 1 : 0)
+                                            .scaleEffect(reduceMotion || isHoveringProgress || isScrubbing ? 1 : 0.97)
+                                    }
                                     .offset(x: max(0, min(fillWidth - 5, totalWidth - 10)))
-                                    .opacity(isHoveringProgress || isScrubbing ? 1 : 0)
                             }
                             .frame(height: 10)
                             .contentShape(Rectangle())
@@ -734,6 +738,7 @@ struct NowPlayingCard: View {
 
 /// Hover-triggered marquee for overflowing text
 struct HoverMarquee: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let text: String
     var delay: Double = 0.8
     var speed: Double = 20.0 // points per second
@@ -811,15 +816,24 @@ struct HoverMarquee: View {
                     reset()
                 }
             }
+            .onChange(of: reduceMotion) { _, _ in
+                if isHovering {
+                    startIfNeeded()
+                } else {
+                    reset()
+                }
+            }
+            .onDisappear { reset() }
             .contentShape(Rectangle())
             .clipped()
         }
+        .help(text)
     }
 
     private func startIfNeeded() {
         hoverGeneration &+= 1
         let generation = hoverGeneration
-        guard textWidth > containerWidth else {
+        guard !reduceMotion, textWidth > containerWidth else {
             showsFullText = false
             resetOffset()
             return
@@ -828,7 +842,7 @@ struct HoverMarquee: View {
         showsFullText = true
         resetOffset()
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard isHovering, generation == hoverGeneration else { return }
+            guard !reduceMotion, isHovering, generation == hoverGeneration else { return }
             let distance = textWidth - containerWidth
             guard distance > 0 else { return }
             withAnimation(.linear(duration: Double(distance) / speed)) {

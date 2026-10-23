@@ -24,10 +24,8 @@ struct SearchPopupView: View {
             if let toast = viewModel.toast {
                 ToastView(message: toast)
                     .padding(.bottom, 44)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: viewModel.toast)
     }
 
     private var showsContent: Bool {
@@ -212,9 +210,7 @@ private struct CommandsListView: View {
 
     private func scrollToSelection(_ proxy: ScrollViewProxy) {
         guard commands.indices.contains(selectedIndex) else { return }
-        withAnimation(.easeInOut(duration: 0.12)) {
-            proxy.scrollTo(commands[selectedIndex].id, anchor: .center)
-        }
+        proxy.scrollTo(commands[selectedIndex].id, anchor: .center)
     }
 }
 
