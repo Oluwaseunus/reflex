@@ -142,29 +142,7 @@ struct NowPlayingCard: View {
                     .foregroundColor(.secondary)
                     .tracking(1)
                 Spacer()
-                HStack(spacing: 10) {
-                    if isSpotify {
-                        volumeScrubber
-                            .frame(width: 100)
-                            .frame(width: showVolumeScrubber ? 100 : 0)
-                            .opacity(showVolumeScrubber ? 1 : 0)
-                            .allowsHitTesting(showVolumeScrubber)
-                            .accessibilityHidden(!showVolumeScrubber)
-                            .animation(.easeInOut(duration: 0.15), value: showVolumeScrubber)
-                    }
-                    Button(action: toggleMute) {
-                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
-                            .font(.system(size: 12, weight: .bold))
-                            .frame(width: 14, height: 14, alignment: .center)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
-                    .popoverFocusHighlight()
-                }
-                .onHover { hovering in
-                    scheduleVolumeVisibility(hovering)
-                }
+                volumeControl
 
                 if !state.isPlaying {
                     Button(action: { stateManager.dismissCurrentTrack() }) {
@@ -598,6 +576,53 @@ struct NowPlayingCard: View {
             let work = DispatchWorkItem { isHoveringVolume = false }
             volumeHideWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        }
+    }
+
+    private var volumeControl: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Button(action: toggleMute) {
+                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 14, height: 14, alignment: .center)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+            .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
+            .popoverFocusHighlight()
+        }
+        // Reserve the slider's space so neither the icon nor app label reflows.
+        .frame(width: isSpotify ? 124 : 14, height: 14)
+        .overlay(alignment: .leading) {
+            if isSpotify {
+                volumeScrubber
+                    .frame(width: 100)
+                    .scaleEffect(x: reduceMotion || showVolumeScrubber ? 1 : 0.03,
+                                 y: 1, anchor: .trailing)
+                    .mask {
+                        Rectangle()
+                            .scaleEffect(x: showVolumeScrubber ? 1 : 0,
+                                         y: 1, anchor: .trailing)
+                    }
+                    .animation(reduceMotion ? nil : (showVolumeScrubber
+                               ? InterfaceMotion.volumeReveal : InterfaceMotion.hoverReveal),
+                               value: showVolumeScrubber)
+                    .allowsHitTesting(showVolumeScrubber)
+                    .accessibilityHidden(!showVolumeScrubber)
+            }
+        }
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            guard isSpotify else { return }
+            switch phase {
+            case .active(let location):
+                // A hidden slider is not a hover trigger. Once the icon opens
+                // it, the entire region bridges pointer travel to the slider.
+                scheduleVolumeVisibility(location.x >= 110 || showVolumeScrubber)
+            case .ended:
+                scheduleVolumeVisibility(false)
+            }
         }
     }
 
