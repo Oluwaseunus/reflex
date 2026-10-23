@@ -89,6 +89,14 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: Notification.Name("openPreferences"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard self?.popover?.isShown == true else { return }
+                self?.closePopover(restoreFocus: false)
+            }
+            .store(in: &cancellables)
+
     }
 
     /// Update the status bar display based on current state
@@ -142,6 +150,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         guard let event = NSApp.currentEvent else { return }
 
         if event.type == .rightMouseUp {
+            closePopover(restoreFocus: false)
             showMenu()
         } else {
             togglePopover()
@@ -186,6 +195,9 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
         // Store the currently focused app before we steal focus
         previousApp = NSWorkspace.shared.frontmostApplication
+        if previousApp?.bundleIdentifier == Bundle.main.bundleIdentifier {
+            previousApp = nil
+        }
         restoreFocusOnClose = false
 
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -263,7 +275,8 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         popoverIsOpen = false
         // Apply the latest state now that the popover is closed
         updateDisplay(state: stateManager?.currentState)
-        if restoreFocusOnClose, let app = previousApp, !app.isTerminated {
+        if restoreFocusOnClose, let app = previousApp, !app.isTerminated,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
             app.activate()
         }
         restoreFocusOnClose = false

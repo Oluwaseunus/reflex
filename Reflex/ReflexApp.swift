@@ -82,12 +82,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // A normal Open/Reopen request should reveal a menu-bar app's controls.
+        // The status panel itself does not activate Reflex or switch Spaces.
+        if !flag { statusBarManager?.showPopover() }
+        return false
+    }
+
     // MARK: - Initialization
 
     private func setupMainMenu() {
         let mainMenu = NSMenu()
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
+
+        let searchItem = NSMenuItem(
+            title: "Search Spotify…",
+            action: #selector(openSpotifySearch),
+            keyEquivalent: ""
+        )
+        searchItem.target = self
+        appMenu.addItem(searchItem)
+        appMenu.addItem(.separator())
 
         let preferencesItem = NSMenuItem(
             title: "Settings...",
@@ -99,6 +115,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func openSpotifySearch() {
+        Task { @MainActor in
+            statusBarManager?.closePopover(restoreFocus: false)
+            SearchPopupController.shared.open()
+        }
     }
 
     private func initializeManagers() {
