@@ -14,6 +14,9 @@ struct StatusBarView: View {
         VStack(spacing: 0) {
             if let state = stateManager.currentState {
                 NowPlayingCard(state: state, router: router, stateManager: stateManager)
+                if state.app?.bundleIdentifier == "com.spotify.client" {
+                    SpotifyDeviceMenu()
+                }
             } else {
                 headerSection
                     .padding()

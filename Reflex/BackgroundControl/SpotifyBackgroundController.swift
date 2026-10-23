@@ -2,10 +2,16 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import Combine
 
 @MainActor
-final class SpotifyBackgroundController {
+final class SpotifyBackgroundController: ObservableObject {
     static let shared = SpotifyBackgroundController()
+
+    @Published private(set) var devices: [SpotifyDevice] = []
+    @Published private(set) var currentDeviceName: String?
+    @Published private(set) var isUpdatingDevices = false
+    @Published private(set) var deviceError: String?
 
     private let spotifyBundleID = "com.spotify.client"
     private let logger = Logger.shared
@@ -59,6 +65,13 @@ final class SpotifyBackgroundController {
                 currentRunID = ""
             }
             do {
+                if isUpdatingDevices {
+                    logger.info("Spotify search run=\(runID) waiting for device work before Accessibility access")
+                    try await Self.waitForDeviceWork(
+                        isUpdating: { self.isUpdatingDevices }
+                    )
+                    logger.info("Spotify search run=\(runID) device work finished; continuing")
+                }
                 try verifyForeground(expectedForeground)
                 let application = try await spotifyAccessibilityApplication()
                 try verifyForeground(expectedForeground)
@@ -106,6 +119,210 @@ final class SpotifyBackgroundController {
                 logger.error("Spotify background control failed", error: error)
             }
         }
+    }
+
+    func refreshDevices() {
+        updateDevices(switchingTo: nil)
+    }
+
+    func switchDevice(_ device: SpotifyDevice) {
+        guard !device.isCurrent else { return }
+        updateDevices(switchingTo: device)
+    }
+
+    static func waitForDeviceWork(
+        isUpdating: @MainActor () -> Bool,
+        timeout: Duration = .seconds(30),
+        pollingInterval: Duration = .milliseconds(100)
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while isUpdating() {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else {
+                throw BackgroundControlError.accessibilityActionFailed(
+                    "Spotify device work did not finish within 30 seconds; search was not submitted."
+                )
+            }
+            try await Task.sleep(for: pollingInterval)
+            try Task.checkCancellation()
+            if isUpdating(), ContinuousClock.now >= deadline {
+                throw BackgroundControlError.accessibilityActionFailed(
+                    "Spotify device work did not finish within 30 seconds; search was not submitted."
+                )
+            }
+        }
+    }
+
+    private func updateDevices(switchingTo requested: SpotifyDevice?) {
+        guard !isUpdatingDevices else { return }
+        guard !isRunning else {
+            if requested != nil {
+                deviceError = "Search is still finishing. Try again in a moment."
+            }
+            return
+        }
+        guard AXIsProcessTrusted() else {
+            deviceError = "Allow Reflex in Accessibility settings to see Spotify devices."
+            return
+        }
+        isUpdatingDevices = true
+        deviceError = nil
+        let foreground = NSWorkspace.shared.frontmostApplication
+        Task {
+            defer { isUpdatingDevices = false }
+            do {
+                let application = try await spotifyAccessibilityApplication()
+                try verifyForeground(foreground)
+                guard let window = spotifyAccessibilityRoots(in: application).first(where: {
+                    devicePickerButton(in: $0) != nil
+                }), let toggle = devicePickerButton(in: window) else {
+                    throw BackgroundControlError.accessibilityActionFailed("Spotify's device picker is unavailable.")
+                }
+                let wasOpen = boolAttribute(kAXValueAttribute, of: toggle) == true
+                defer {
+                    // Restore only the panel that this request opened. Never
+                    // activate Spotify or restore a different foreground app.
+                    if !wasOpen, let button = devicePickerButton(in: window),
+                       boolAttribute(kAXValueAttribute, of: button) == true {
+                        try? press(button, named: "device picker")
+                    }
+                }
+                if !wasOpen { try press(toggle, named: "device picker") }
+                try await Task.sleep(for: .milliseconds(350))
+                if (!wasOpen || readDevices(in: window) == nil), let field = spotifySearchField(in: window) {
+                    // A second background action lets Spotify publish the new
+                    // panel while its full-screen Space is inactive.
+                    try press(field, named: "search field")
+                }
+                guard let picker = await waitForAccessibilityElement(
+                    named: "Spotify devices", timeout: .seconds(8),
+                    find: {
+                        guard let button = self.devicePickerButton(in: window),
+                              self.boolAttribute(kAXValueAttribute, of: button) == true else { return nil as SpotifyAccessibilityDevices? }
+                        return self.readDevices(in: window)
+                    }
+                ) else {
+                    throw BackgroundControlError.accessibilityActionFailed("Spotify's devices did not finish loading.")
+                }
+                try verifyForeground(foreground)
+                publishDevices(picker)
+                if let requested {
+                    // Re-resolve against the live picker; never retain a row's
+                    // Accessibility object across menu openings or reconnects.
+                    guard let target = picker.options.first(where: { $0.device.id == requested.id }),
+                          let button = target.button else {
+                        throw BackgroundControlError.accessibilityActionFailed("That device is no longer available. Refresh devices and try again.")
+                    }
+                    if !target.device.isCurrent {
+                        try press(button, named: "device")
+                        try await Task.sleep(for: .milliseconds(350))
+                        try verifyForeground(foreground)
+                        if let field = spotifySearchField(in: window) {
+                            // Spotify can complete a transfer while its hidden
+                            // Accessibility snapshot still names the old device.
+                            try press(field, named: "search field")
+                        }
+                        guard let confirmed = try await waitForDevice(
+                            target.device.id, in: window, preserving: foreground
+                        ) else {
+                            throw BackgroundControlError.accessibilityActionFailed("Spotify did not confirm the device switch. Refresh devices to check.")
+                        }
+                        try verifyForeground(foreground)
+                        publishDevices(confirmed)
+                        logger.info("Spotify device switch verified; foreground preserved")
+                    }
+                }
+                logger.info("Spotify devices refreshed; count=\(devices.count); foregroundPID=\(foreground?.processIdentifier ?? 0)")
+            } catch {
+                currentDeviceName = nil
+                devices = []
+                deviceError = error.localizedDescription
+                logger.error("Spotify device control failed", error: error)
+            }
+        }
+    }
+
+    private func publishDevices(_ picker: SpotifyAccessibilityDevices) {
+        currentDeviceName = picker.currentName
+        devices = picker.options.map(\.device)
+    }
+
+    private func waitForDevice(
+        _ deviceID: String, in window: AXUIElement, preserving foreground: NSRunningApplication?
+    ) async throws -> SpotifyAccessibilityDevices? {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(12))
+        repeat {
+            try verifyForeground(foreground)
+            if let result = readDevices(in: window),
+               result.options.contains(where: { $0.device.isCurrent && $0.device.id == deviceID }) {
+                return result
+            }
+            // The Connect transfer finishes asynchronously. Keep requesting a
+            // fresh hidden-window update until Spotify names the new device;
+            // one action immediately after the click can be too early.
+            if let field = spotifySearchField(in: window) {
+                try press(field, named: "search field")
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        } while ContinuousClock.now < deadline
+        return nil
+    }
+
+    private func devicePickerButton(in window: AXUIElement) -> AXUIElement? {
+        accessibilityElements(in: window, limit: rootTraversalLimit).first {
+            guard linkLabel($0) == "Connect to a device" else { return false }
+            // Chromium exposes aria-pressed controls as toggle buttons rather
+            // than ordinary AXButtons. Match the supported action, not a role.
+            var actions: CFArray?
+            return AXUIElementCopyActionNames($0, &actions) == .success
+                && (actions as? [String] ?? []).contains(kAXPressAction)
+        }
+    }
+
+    private func readDevices(in window: AXUIElement) -> SpotifyAccessibilityDevices? {
+        guard let panel = accessibilityElements(in: window, limit: rootTraversalLimit).first(where: {
+            stringAttribute(kAXRoleAttribute, of: $0) == kAXGroupRole && linkLabel($0) == "Connect to a device"
+        }) else { return nil }
+        let elements = accessibilityElements(in: panel, limit: 500)
+        guard let current = elements.first(where: { linkLabel($0) == "Current device" }),
+              let name = accessibilityChildren(of: current).map({ linkLabel($0) }).first(where: {
+                  !$0.isEmpty && $0 != "Listen with friends anywhere"
+              }) else { return nil }
+        let isLocal = name == "This computer" || accessibilityElements(in: current, limit: 30)
+            .contains { linkLabel($0) == "This computer" }
+        var options = [SpotifyAccessibilityDevice(
+            device: SpotifyDevice(id: isLocal ? "local" : "name:\(name)", name: name, isCurrent: true), button: nil
+        )]
+        for list in elements where stringAttribute(kAXRoleAttribute, of: list) == kAXListRole {
+            guard linkLabel(list) != "No other devices found" else { continue }
+            for row in accessibilityChildren(of: list) {
+                let buttons = accessibilityElements(in: row, limit: 80).filter {
+                    stringAttribute(kAXRoleAttribute, of: $0) == kAXButtonRole
+                        && boolAttribute(kAXEnabledAttribute, of: $0) != false
+                }
+                guard let button = buttons.first,
+                      !linkLabel(button).isEmpty else { continue }
+                let deviceName = linkLabel(button)
+                let deviceID = deviceName == "This computer" ? "local" : "name:\(deviceName)"
+                // Current device and available rows update separately during a
+                // transfer. A device cannot be current and available at once;
+                // wait for the complete new snapshot instead of dropping a row.
+                guard deviceID != options[0].device.id else { return nil }
+                options.append(SpotifyAccessibilityDevice(
+                    device: SpotifyDevice(id: deviceID, name: deviceName, isCurrent: false), button: button
+                ))
+            }
+        }
+        // An indistinguishable duplicate is unsafe to target by name.
+        let counts = Dictionary(grouping: options, by: { $0.device.id }).mapValues(\.count)
+        options.removeAll { counts[$0.device.id, default: 0] > 1 }
+        return SpotifyAccessibilityDevices(currentName: name, options: options)
+    }
+
+    private func boolAttribute(_ attribute: String, of element: AXUIElement) -> Bool? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return (value as? NSNumber)?.boolValue
     }
 
     private func submitSpotifySearch(
@@ -614,6 +831,22 @@ final class SpotifyBackgroundController {
             )
         }
     }
+}
+
+struct SpotifyDevice: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let isCurrent: Bool
+}
+
+private struct SpotifyAccessibilityDevice {
+    let device: SpotifyDevice
+    let button: AXUIElement?
+}
+
+private struct SpotifyAccessibilityDevices {
+    let currentName: String
+    let options: [SpotifyAccessibilityDevice]
 }
 
 private struct SpotifyAccessibilitySearchResult {
