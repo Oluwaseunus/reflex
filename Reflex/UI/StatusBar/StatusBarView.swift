@@ -61,9 +61,9 @@ struct StatusBarView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.primary)
-            .focusable(false)
             .padding(.horizontal)
             .padding(.vertical, 8)
+            .popoverFocusHighlight()
 
             Divider()
 
@@ -81,9 +81,9 @@ struct StatusBarView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.secondary)
-            .focusable(false)
             .padding(.horizontal)
             .padding(.vertical, 8)
+            .popoverFocusHighlight()
         }
         .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
     }
@@ -97,6 +97,13 @@ struct NowPlayingCard: View {
     /// above it restart the current track. Matches Spotify's native UI
     /// behavior for the ⏮ button.
     private static let restartThresholdSeconds: Double = 3.0
+    private static let keyboardSeekStepSeconds: Double = 5.0
+    private static let keyboardVolumeStep = 5
+
+    private enum FocusedScrubber: Hashable {
+        case playbackPosition
+        case volume
+    }
 
     let state: PlaybackState
     let router: SmartRouter
@@ -120,6 +127,7 @@ struct NowPlayingCard: View {
     @State private var lastVolumeSent: Int = -1
     @State private var lastPositionSendAt: Date = .distantPast
     @State private var spotifyTrackStartupGraceUntil: Date = .distantPast
+    @FocusState private var focusedScrubber: FocusedScrubber?
 
     private let scrubThrottle: TimeInterval = 0.03
     private let spotifyTrackStartupGracePeriod: TimeInterval = 2.0
@@ -136,8 +144,11 @@ struct NowPlayingCard: View {
                 HStack(spacing: 10) {
                     if isSpotify {
                         volumeScrubber
+                            .frame(width: 100)
                             .frame(width: showVolumeScrubber ? 100 : 0)
                             .opacity(showVolumeScrubber ? 1 : 0)
+                            .allowsHitTesting(showVolumeScrubber)
+                            .accessibilityHidden(!showVolumeScrubber)
                             .animation(.easeInOut(duration: 0.15), value: showVolumeScrubber)
                     }
                     Button(action: toggleMute) {
@@ -146,9 +157,9 @@ struct NowPlayingCard: View {
                             .frame(width: 14, height: 14, alignment: .center)
                     }
                     .buttonStyle(.plain)
-                    .focusable(false)
                     .foregroundColor(.secondary)
                     .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
+                    .popoverFocusHighlight()
                 }
                 .onHover { hovering in
                     scheduleVolumeVisibility(hovering)
@@ -161,9 +172,9 @@ struct NowPlayingCard: View {
                             .frame(width: 14, height: 14, alignment: .center)
                     }
                     .buttonStyle(.plain)
-                    .focusable(false)
                     .foregroundColor(.secondary)
                     .help("Dismiss from menu bar")
+                    .popoverFocusHighlight()
                 }
             }
             .padding(.bottom, 12)
@@ -191,9 +202,9 @@ struct NowPlayingCard: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .focusable(false)
                 .disabled(!canOpenTrack)
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                .popoverFocusHighlight(cornerRadius: 8)
 
                 // Right side: Track info, controls, and progress
                 VStack(alignment: .leading, spacing: 0) {
@@ -207,8 +218,8 @@ struct NowPlayingCard: View {
                             .accessibilityLabel(state.trackName ?? "Unknown Track")
                     }
                     .buttonStyle(.plain)
-                    .focusable(false)
                     .disabled(!canOpenTrack)
+                    .popoverFocusHighlight()
 
                     Button(action: openAlbumLink) {
                         Text(state.albumName ?? "Unknown Album")
@@ -221,9 +232,9 @@ struct NowPlayingCard: View {
                             .accessibilityLabel(state.albumName ?? "Unknown Album")
                     }
                     .buttonStyle(.plain)
-                    .focusable(false)
                     .disabled(!canOpenAlbum)
                     .padding(.top, 2)
+                    .popoverFocusHighlight()
 
                     Button(action: openArtistLink) {
                         HoverMarquee(text: state.artistName ?? "Unknown Artist")
@@ -234,9 +245,9 @@ struct NowPlayingCard: View {
                             .accessibilityLabel(state.artistName ?? "Unknown Artist")
                     }
                     .buttonStyle(.plain)
-                    .focusable(false)
                     .disabled(!canOpenArtist)
                     .padding(.top, 2)
+                    .popoverFocusHighlight()
 
                     Spacer()
 
@@ -250,7 +261,7 @@ struct NowPlayingCard: View {
                                 .foregroundColor(.primary)
                         }
                         .buttonStyle(.plain)
-                        .focusable(false)
+                        .popoverFocusHighlight()
 
                     Spacer(minLength: 16)
 
@@ -258,9 +269,10 @@ struct NowPlayingCard: View {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 26))
                             .foregroundColor(.primary)
+                            .frame(width: 28, height: 28)
                         }
                         .buttonStyle(.plain)
-                        .focusable(false)
+                        .popoverFocusHighlight()
 
                         Spacer(minLength: 16)
 
@@ -270,7 +282,7 @@ struct NowPlayingCard: View {
                                 .foregroundColor(.primary)
                         }
                         .buttonStyle(.plain)
-                        .focusable(false)
+                        .popoverFocusHighlight()
 
                         Spacer(minLength: 4)
                     }
@@ -322,18 +334,13 @@ struct NowPlayingCard: View {
                                         }
                                     }
                                     .onEnded { value in
-                                        guard duration > 0, let app = state.app else {
+                                        guard duration > 0 else {
                                             isScrubbing = false
                                             return
                                         }
                                         let fraction = max(0, min(1, value.location.x / totalWidth))
                                         let seekTo = Double(fraction) * duration
-                                        currentPosition = seekTo
-                                        if isSpotify {
-                                            SpotifyBridge.setPlaybackPosition(seekTo)
-                                        } else {
-                                            AppleScriptHelper.setPlaybackPosition(seekTo, for: app)
-                                        }
+                                        setPlaybackPosition(seekTo)
                                         isScrubbing = false
                                     }
                             )
@@ -355,6 +362,32 @@ struct NowPlayingCard: View {
                                 .frame(minWidth: 46, alignment: .trailing)
                         }
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Playback position")
+                    .accessibilityValue("\(accessibilityTime(isScrubbing ? scrubPosition : currentPosition)) of \(accessibilityTime(duration))")
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment:
+                            adjustPlaybackPosition(by: Self.keyboardSeekStepSeconds)
+                        case .decrement:
+                            adjustPlaybackPosition(by: -Self.keyboardSeekStepSeconds)
+                        @unknown default:
+                            break
+                        }
+                    }
+                    .focusable(duration > 0)
+                    .focused($focusedScrubber, equals: .playbackPosition)
+                    .onMoveCommand { direction in
+                        switch direction {
+                        case .right, .up:
+                            adjustPlaybackPosition(by: Self.keyboardSeekStepSeconds)
+                        case .left, .down:
+                            adjustPlaybackPosition(by: -Self.keyboardSeekStepSeconds)
+                        default:
+                            break
+                        }
+                    }
+                    .popoverFocusAppearance(focusedScrubber == .playbackPosition, cornerRadius: 4)
                 }
                 .frame(height: 120)
             }
@@ -384,6 +417,11 @@ struct NowPlayingCard: View {
         .onDisappear {
             timerCancellable?.cancel()
             timerCancellable = nil
+            volumeHideWorkItem?.cancel()
+            volumeHideWorkItem = nil
+            isHoveringVolume = false
+            isScrubbingVolume = false
+            focusedScrubber = nil
         }
     }
 
@@ -429,6 +467,30 @@ struct NowPlayingCard: View {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%02d:%02d", mins, secs)
+    }
+
+    private func accessibilityTime(_ seconds: Double) -> String {
+        let totalSeconds = max(0, Int(seconds.rounded()))
+        let minutes = totalSeconds / 60
+        let remainingSeconds = totalSeconds % 60
+        let minuteUnit = minutes == 1 ? "minute" : "minutes"
+        let secondUnit = remainingSeconds == 1 ? "second" : "seconds"
+        return "\(minutes) \(minuteUnit), \(remainingSeconds) \(secondUnit)"
+    }
+
+    private func adjustPlaybackPosition(by offset: Double) {
+        setPlaybackPosition(currentPosition + offset)
+    }
+
+    private func setPlaybackPosition(_ seconds: Double) {
+        guard duration > 0, let app = state.app else { return }
+        let target = max(0, min(seconds, duration))
+        currentPosition = target
+        if isSpotify {
+            SpotifyBridge.setPlaybackPosition(target)
+        } else {
+            AppleScriptHelper.setPlaybackPosition(target, for: app)
+        }
     }
 
     private func sendCommand(_ command: MediaCommand) {
@@ -568,18 +630,52 @@ struct NowPlayingCard: View {
                     .onEnded { value in
                         let fraction = max(0, min(1, value.location.x / totalWidth))
                         let target = Int((Double(fraction) * 100).rounded())
-                        currentVolume = target
-                        isMuted = target == 0
-                        if target != lastVolumeSent {
-                            SpotifyBridge.setVolume(target)
-                            lastVolumeSent = target
-                            lastVolumeSendAt = Date()
-                        }
+                        setVolume(target)
                         isScrubbingVolume = false
                     }
             )
         }
         .frame(height: 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Spotify volume")
+        .accessibilityValue("\(currentVolume) percent")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                adjustVolume(by: Self.keyboardVolumeStep)
+            case .decrement:
+                adjustVolume(by: -Self.keyboardVolumeStep)
+            @unknown default:
+                break
+            }
+        }
+        .focusable(showVolumeScrubber)
+        .focused($focusedScrubber, equals: .volume)
+        .onMoveCommand { direction in
+            switch direction {
+            case .right, .up:
+                adjustVolume(by: Self.keyboardVolumeStep)
+            case .left, .down:
+                adjustVolume(by: -Self.keyboardVolumeStep)
+            default:
+                break
+            }
+        }
+        .popoverFocusAppearance(focusedScrubber == .volume, cornerRadius: 4)
+    }
+
+    private func adjustVolume(by offset: Int) {
+        setVolume(currentVolume + offset)
+    }
+
+    private func setVolume(_ volume: Int) {
+        let target = max(0, min(volume, 100))
+        currentVolume = target
+        isMuted = target == 0
+        guard target != lastVolumeSent else { return }
+        SpotifyBridge.setVolume(target)
+        lastVolumeSent = target
+        lastVolumeSendAt = Date()
     }
 
     private func loadPlaybackInfo() {
@@ -727,6 +823,34 @@ struct HoverMarquee: View {
         withTransaction(Transaction(animation: nil)) {
             offset = 0
         }
+    }
+}
+
+/// Keeps popover buttons keyboard-accessible without SwiftUI's default focus ring.
+private struct PopoverFocusHighlight: ViewModifier {
+    @FocusState private var isFocused: Bool
+
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .focused($isFocused)
+            .popoverFocusAppearance(isFocused, cornerRadius: cornerRadius)
+    }
+}
+
+private extension View {
+    func popoverFocusHighlight(cornerRadius: CGFloat = 6) -> some View {
+        modifier(PopoverFocusHighlight(cornerRadius: cornerRadius))
+    }
+
+    func popoverFocusAppearance(_ isFocused: Bool, cornerRadius: CGFloat) -> some View {
+        focusEffectDisabled()
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(isFocused ? Color.accentColor.opacity(0.14) : .clear)
+                    .allowsHitTesting(false)
+            }
     }
 }
 

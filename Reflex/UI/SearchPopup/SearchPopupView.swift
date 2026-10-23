@@ -80,7 +80,10 @@ struct SearchPopupView: View {
                         commands: commands,
                         selectedIndex: viewModel.selectedIndex,
                         highlightStyle: preferences.prefs.searchHighlightStyle,
-                        onTap: { index in
+                        onSelect: { index in
+                            viewModel.selectedIndex = index
+                        },
+                        onActivate: { index in
                             viewModel.selectedIndex = index
                             viewModel.onEnterPressed()
                         }
@@ -151,7 +154,10 @@ private struct CommandsListView: View {
     let commands: [SearchCommandItem]
     let selectedIndex: Int
     let highlightStyle: SearchHighlightStyle
-    var onTap: (Int) -> Void
+    var onSelect: (Int) -> Void
+    var onActivate: (Int) -> Void
+
+    @FocusState private var focusedCommand: SearchCommandKind?
 
     private static let visibleRows = 5
     private static let rowHeight: CGFloat = 56
@@ -161,18 +167,30 @@ private struct CommandsListView: View {
             ScrollView(.vertical, showsIndicators: commands.count > Self.visibleRows) {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(commands.enumerated()), id: \.element.id) { idx, command in
-                        CommandRow(
-                            command: command,
-                            isSelected: idx == selectedIndex && command.isEnabled,
-                            highlightStyle: highlightStyle
-                        )
+                        Button {
+                            onActivate(idx)
+                        } label: {
+                            CommandRow(
+                                command: command,
+                                isSelected: idx == selectedIndex && command.isEnabled,
+                                highlightStyle: highlightStyle
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!command.isEnabled)
+                        .focused($focusedCommand, equals: command.id)
+                        .focusEffectDisabled()
+                        .accessibilityLabel("\(command.title), \(command.subtitle)")
+                        .accessibilityAddTraits(idx == selectedIndex && command.isEnabled ? .isSelected : [])
                         .id(command.id)
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard command.isEnabled else { return }
-                            onTap(idx)
-                        }
                     }
+                }
+                .onChange(of: focusedCommand) { _, commandID in
+                    guard let commandID,
+                          let index = commands.firstIndex(where: { $0.id == commandID }),
+                          commands[index].isEnabled else { return }
+                    onSelect(index)
                 }
             }
             .frame(height: listHeight)
