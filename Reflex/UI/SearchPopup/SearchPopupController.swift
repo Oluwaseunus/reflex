@@ -133,6 +133,7 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
     @MainActor
     func close(restoreFocus: Bool = true) {
         removeMonitors()
+        panel?.resignKey()
         panel?.orderOut(nil)
         // Re-activate the app that had focus before the popup opened. Mouse
         // click-away close paths opt out so the clicked target keeps focus.
@@ -150,6 +151,24 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
         // without activating another app or hiding all of Reflex's windows.
         close(restoreFocus: false)
         return foreground
+    }
+
+    @MainActor
+    func waitUntilDismissed() async {
+        guard let panel else { return }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .milliseconds(500))
+
+        repeat {
+            // Give AppKit and WindowServer time to finish releasing the
+            // nonactivating panel before Spotify is asked to accept input.
+            try? await Task.sleep(for: .milliseconds(25))
+            if !panel.isVisible, !panel.isKeyWindow { return }
+        } while clock.now < deadline
+
+        Logger.shared.warning(
+            "Search panel dismissal timed out: visible=\(panel.isVisible), key=\(panel.isKeyWindow)"
+        )
     }
 
     @MainActor

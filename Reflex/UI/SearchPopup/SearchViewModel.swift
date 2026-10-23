@@ -120,7 +120,10 @@ final class SearchViewModel: ObservableObject {
         }
 
         let foreground = SearchPopupController.shared.closeForBackgroundPlayback()
-        SpotifyBackgroundController.shared.play(query: trimmedQuery, preserving: foreground)
+        Task { @MainActor in
+            await SearchPopupController.shared.waitUntilDismissed()
+            SpotifyBackgroundController.shared.play(query: trimmedQuery, preserving: foreground)
+        }
     }
 
     private func updateCommandResults(for query: String) {
