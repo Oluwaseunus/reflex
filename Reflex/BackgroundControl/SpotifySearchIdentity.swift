@@ -1,23 +1,86 @@
 import Foundation
 
-/// Identity extracted from a Spotify Accessibility result, not a network API.
-struct SpotifySearchIdentity {
-    let trackURI: String
-    let title: String
-    let artists: [String]
+/// Validates canonical Spotify identities extracted from Accessibility results.
+enum SpotifySearchIdentity {
+    static func searchQuery(from value: String) -> String? {
+        let urlValue = value.hasPrefix("xpui.app.spotify.com/") ? "https://\(value)" : value
+        guard let components = URLComponents(string: urlValue),
+              components.host == "xpui.app.spotify.com",
+              ["https", "http"].contains(components.scheme) else { return nil }
+        let parts = components.percentEncodedPath.split(separator: "/")
+        guard parts.count >= 2, parts[0] == "search" else { return nil }
+        return String(parts[1]).removingPercentEncoding
+    }
 
-    func score(for query: String) -> Int? {
-        let queryWords = Self.words(query).filter { !["by", "feat", "featuring"].contains($0) }
-        guard !queryWords.isEmpty else { return nil }
-        let titleWords = Self.words(title)
-        let artistWords = artists.flatMap(Self.words)
-        let available = Set(titleWords + artistWords)
-        guard queryWords.allSatisfy(available.contains) else { return nil }
-        // Prefer a complete title over a remix/alternate version with extra words.
-        let exactTitle = titleWords == queryWords
-        let titleAndArtist = titleWords + artistWords == queryWords
-        return (exactTitle ? 1_000 : 0) + (titleAndArtist ? 1_000 : 0)
-            + queryWords.filter(Set(titleWords).contains).count * 10 - titleWords.count
+    enum SearchQueryMatchKind: Equatable {
+        case title
+        case artist
+        case titleAndArtist
+    }
+
+    static func searchQueryMatchKind(_ query: String, title: String, artists: [String]) -> SearchQueryMatchKind? {
+        let normalizedQuery = normalizedSearchText(query)
+        let normalizedTitle = normalizedSearchText(title)
+        let normalizedArtists = artists.map(normalizedSearchText).filter { !$0.isEmpty }
+        guard !normalizedQuery.isEmpty, !normalizedTitle.isEmpty, !normalizedArtists.isEmpty else {
+            return nil
+        }
+        if normalizedQuery == normalizedTitle { return .title }
+        if normalizedArtists.contains(normalizedQuery) { return .artist }
+
+        let combinedArtists = normalizedArtists.joined()
+        for artist in Set(normalizedArtists + [combinedArtists]) {
+            if normalizedQuery == normalizedTitle + artist
+                || normalizedQuery == artist + normalizedTitle
+                || normalizedQuery == normalizedTitle + "by" + artist {
+                return .titleAndArtist
+            }
+        }
+        return nil
+    }
+
+    static func matchesSearchQuery(_ query: String, title: String, artists: [String]) -> Bool {
+        searchQueryMatchKind(query, title: title, artists: artists) != nil
+    }
+
+    static func normalizedIdentity(title: String, artists: [String]) -> String? {
+        let normalizedTitle = normalizedSearchText(title)
+        let normalizedArtists = Set(artists.map(normalizedSearchText).filter { !$0.isEmpty }).sorted()
+        guard !normalizedTitle.isEmpty, !normalizedArtists.isEmpty else { return nil }
+        return ([normalizedTitle] + normalizedArtists).joined(separator: "|")
+    }
+
+    static func hasAmbiguousCombinedMatches(_ normalizedIdentities: [String]) -> Bool {
+        Set(normalizedIdentities).count > 1
+    }
+
+    static func selectedMatchIndex(
+        matchKinds: [SearchQueryMatchKind], normalizedIdentities: [String]
+    ) -> Int? {
+        guard matchKinds.count == normalizedIdentities.count else { return nil }
+        let combinedIndexes = matchKinds.indices.filter { matchKinds[$0] == .titleAndArtist }
+        if !combinedIndexes.isEmpty {
+            let collisionIndexes = matchKinds.indices.filter {
+                matchKinds[$0] == .title || matchKinds[$0] == .titleAndArtist
+            }
+            let identities = collisionIndexes.map { normalizedIdentities[$0] }
+            guard !hasAmbiguousCombinedMatches(identities) else { return nil }
+            return combinedIndexes.first
+        }
+        return matchKinds.indices.first {
+            matchKinds[$0] == .title || matchKinds[$0] == .artist
+        }
+    }
+
+    private static func normalizedSearchText(_ value: String) -> String {
+        let folded = value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+        let alphanumericScalars = folded.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+        }
+        return String(String.UnicodeScalarView(alphanumericScalars))
     }
 
     static func uri(from value: String, type: String) -> String? {
@@ -38,11 +101,5 @@ struct SpotifySearchIdentity {
                   CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").contains($0)
               }) else { return nil }
         return prefix + identifier
-    }
-
-    static func words(_ text: String) -> [String] {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .filter { !$0.isEmpty }
     }
 }
