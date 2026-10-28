@@ -93,6 +93,8 @@ struct StatusBarView: View {
 /// Modern Now Playing card with album art, controls, and progress
 struct NowPlayingCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     /// When the ⏮ button is clicked, positions strictly less than this
     /// threshold (in seconds) go to the previous track; positions at or
     /// above it restart the current track. Matches Spotify's native UI
@@ -139,10 +141,11 @@ struct NowPlayingCard: View {
             HStack {
                 Text("• \(state.app?.name.uppercased() ?? "UNKNOWN") •")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
                     .tracking(1)
                 Spacer()
                 volumeControl
+                    .environment(\.colorScheme, stateManager.currentArtwork == nil ? colorScheme : .dark)
 
                 if !state.isPlaying {
                     Button(action: { stateManager.dismissCurrentTrack() }) {
@@ -151,7 +154,7 @@ struct NowPlayingCard: View {
                             .frame(width: 14, height: 14, alignment: .center)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
                     .help("Dismiss from menu bar")
                     .popoverFocusHighlight()
                 }
@@ -205,7 +208,7 @@ struct NowPlayingCard: View {
                             .font(.system(size: 11))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: 14, alignment: .leading)
                             .accessibilityLabel(state.albumName ?? "Unknown Album")
@@ -218,7 +221,7 @@ struct NowPlayingCard: View {
                     Button(action: openArtistLink) {
                         HoverMarquee(text: state.artistName ?? "Unknown Artist")
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: 14, alignment: .leading)
                             .accessibilityLabel(state.artistName ?? "Unknown Artist")
@@ -279,7 +282,7 @@ struct NowPlayingCard: View {
                             ZStack(alignment: .leading) {
                                 // Background track
                                 RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color(nsColor: .separatorColor))
+                                    .fill(stateManager.currentArtwork == nil ? Color(nsColor: .separatorColor) : Color.white.opacity(0.3))
                                     .frame(height: 3)
 
                                 // Progress fill
@@ -336,12 +339,12 @@ struct NowPlayingCard: View {
                         HStack {
                             Text(formatTime(isScrubbing ? scrubPosition : currentPosition))
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
                                 .frame(minWidth: 46, alignment: .leading)
                             Spacer()
                             Text(formatTime(duration))
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
                                 .frame(minWidth: 46, alignment: .trailing)
                         }
                     }
@@ -373,10 +376,14 @@ struct NowPlayingCard: View {
                     .popoverFocusAppearance(focusedScrubber == .playbackPosition, cornerRadius: 4)
                 }
                 .frame(height: 120)
+                .environment(\.colorScheme, stateManager.currentArtwork == nil ? colorScheme : .dark)
             }
         }
             .padding(14)
-            .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
+            .background {
+                VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow)
+                    .overlay { artworkBackdrop }
+            }
             .onAppear {
                 isPlaying = state.isPlaying
                 loadVolumeInfo()
@@ -406,6 +413,28 @@ struct NowPlayingCard: View {
             isScrubbingVolume = false
             focusedScrubber = nil
         }
+    }
+
+    /// Fill the entire top card without changing the artwork or the card's layout.
+    /// The fixed dark scrim keeps even white cover art behind readable controls.
+    private var artworkBackdrop: some View {
+        GeometryReader { geometry in
+            if let artwork = stateManager.currentArtwork {
+                Image(nsImage: artwork)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .scaleEffect(1.1)
+                    .blur(radius: 10, opaque: true)
+                    .overlay(Color.black.opacity(colorSchemeContrast == .increased ? 0.85 : 0.72))
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+
+            }
+        }
+        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var canOpenAlbum: Bool {
@@ -592,9 +621,9 @@ struct NowPlayingCard: View {
                     .frame(width: 14, height: 14, alignment: .center)
             }
             .buttonStyle(.plain)
-            .foregroundColor(.secondary)
+            .foregroundColor(stateManager.currentArtwork == nil ? .secondary : .white.opacity(0.85))
             .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
-            .popoverFocusHighlight()
+            .focusEffectDisabled()
         }
         // Reserve the slider's space so neither the icon nor app label reflows.
         .frame(width: isSpotify ? 124 : 14, height: 14)
@@ -888,7 +917,7 @@ private extension View {
         focusEffectDisabled()
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(isFocused ? Color.accentColor.opacity(0.14) : .clear)
+                    .strokeBorder(isFocused ? Color.primary.opacity(0.35) : .clear, lineWidth: 1)
                     .allowsHitTesting(false)
             }
     }
