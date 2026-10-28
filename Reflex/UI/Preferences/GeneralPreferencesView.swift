@@ -33,6 +33,10 @@ struct GeneralPreferencesView: View {
                         .foregroundColor(.secondary)
                 }
 
+                Toggle("Use album artwork as now-playing background",
+                       isOn: $preferences.prefs.useAlbumArtworkBackground)
+                    .help("Fill the now-playing section with blurred album artwork")
+
                 HStack {
                     Text("Search highlight color")
                     Spacer()
