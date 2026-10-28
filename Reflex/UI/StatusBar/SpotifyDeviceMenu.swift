@@ -5,9 +5,10 @@ struct SpotifyDeviceMenu: View {
 
     private var deviceLabel: String {
         if let currentDeviceName = controller.currentDeviceName {
-            return currentDeviceName
+            return "Playing on: \(currentDeviceName)"
         }
-        return controller.isUpdatingDevices ? "Checking…" : "Unavailable"
+        if controller.isUpdatingDevices { return "Checking devices…" }
+        return controller.deviceError == nil ? "Playback devices" : "Devices unavailable"
     }
 
     var body: some View {
@@ -20,7 +21,7 @@ struct SpotifyDeviceMenu: View {
 
             if controller.devices.isEmpty {
                 if !controller.isUpdatingDevices && controller.deviceError == nil {
-                    Text("No devices available")
+                    Text("Refresh to load devices")
                 }
             } else {
                 ForEach(controller.devices) { device in
@@ -48,7 +49,7 @@ struct SpotifyDeviceMenu: View {
             .disabled(controller.isUpdatingDevices)
         } label: {
             HStack(spacing: 6) {
-                Text("Playing on: \(deviceLabel)")
+                Text(deviceLabel)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
@@ -63,8 +64,5 @@ struct SpotifyDeviceMenu: View {
         .menuIndicator(.hidden)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .onAppear {
-            controller.refreshDevices()
-        }
     }
 }
