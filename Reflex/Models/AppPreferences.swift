@@ -12,7 +12,7 @@ struct AppPreferences: Codable {
         case favoriteApps, lastUsedApp, autoSwitchEnabled, showNowPlaying, showTrackInfo,
              showArtistInMenuBar, launchAtLogin, pollingInterval, customShortcuts,
              hasCompletedOnboarding, preferencesVersion,
-             updateMenuBarWhilePopoverOpen, searchHighlightStyle
+             updateMenuBarWhilePopoverOpen, searchHighlightStyle, useAlbumArtworkBackground
     }
 
     /// Bundle IDs of user's favorite media apps
@@ -48,6 +48,9 @@ struct AppPreferences: Codable {
     /// Highlight style for the Spotify search popup selection
     var searchHighlightStyle: SearchHighlightStyle = .accent
 
+    /// Use blurred album artwork behind the now-playing controls.
+    var useAlbumArtworkBackground: Bool = true
+
     /// App has been run before
     var hasCompletedOnboarding: Bool = false
 
@@ -72,6 +75,7 @@ struct AppPreferences: Codable {
         customShortcuts = try container.decodeIfPresent([String: String].self, forKey: .customShortcuts) ?? [:]
         updateMenuBarWhilePopoverOpen = try container.decodeIfPresent(Bool.self, forKey: .updateMenuBarWhilePopoverOpen) ?? false
         searchHighlightStyle = try container.decodeIfPresent(SearchHighlightStyle.self, forKey: .searchHighlightStyle) ?? .accent
+        useAlbumArtworkBackground = try container.decodeIfPresent(Bool.self, forKey: .useAlbumArtworkBackground) ?? true
         hasCompletedOnboarding = try container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding) ?? false
         preferencesVersion = try container.decodeIfPresent(Int.self, forKey: .preferencesVersion) ?? 1
     }
