@@ -206,6 +206,14 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         // launched SwiftUI app can also open its Settings scene.
         popover?.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
 
+        // The hosting controller is reused across openings. Do not depend on a
+        // SwiftUI onAppear callback to retry an earlier failed device refresh.
+        if stateManager.currentState?.app?.bundleIdentifier == "com.spotify.client" {
+            Task { @MainActor in
+                SpotifyBackgroundController.shared.refreshDevices()
+            }
+        }
+
         startEventMonitor()
         Logger.shared.debug("Popover shown")
     }

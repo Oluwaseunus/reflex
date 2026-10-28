@@ -16,6 +16,7 @@ final class SpotifyBackgroundController: ObservableObject {
     private let spotifyBundleID = "com.spotify.client"
     private let logger = Logger.shared
     private var isRunning = false
+    private var deviceRefreshPending = false
     private let accessibilityPollInterval = Duration.milliseconds(250)
     private let searchNavigationTimeout = Duration.seconds(10)
     private let playbackTimeout = Duration.seconds(8)
@@ -63,6 +64,10 @@ final class SpotifyBackgroundController: ObservableObject {
                 workspaceNotifications.removeObserver(spaceObserver)
                 isRunning = false
                 currentRunID = ""
+                if deviceRefreshPending {
+                    deviceRefreshPending = false
+                    refreshDevices()
+                }
             }
             do {
                 if isUpdatingDevices {
@@ -160,26 +165,50 @@ final class SpotifyBackgroundController: ObservableObject {
         guard !isRunning else {
             if requested != nil {
                 deviceError = "Search is still finishing. Try again in a moment."
+            } else {
+                deviceRefreshPending = true
+                logger.info("Spotify device refresh deferred until search finishes")
             }
             return
         }
         guard AXIsProcessTrusted() else {
             deviceError = "Allow Reflex in Accessibility settings to see Spotify devices."
+            logger.warning("Spotify device refresh requires Accessibility permission")
             return
         }
         isUpdatingDevices = true
         deviceError = nil
         let foreground = NSWorkspace.shared.frontmostApplication
+        logger.info("Spotify device refresh started; switching=\(requested != nil); foregroundPID=\(foreground?.processIdentifier ?? 0)")
+        let workspaceNotifications = NSWorkspace.shared.notificationCenter
+        let spaceObserver = workspaceNotifications.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil, queue: .main
+        ) { _ in
+            Logger.shared.warning("Spotify device refresh activeSpaceChanged")
+        }
         Task {
-            defer { isUpdatingDevices = false }
+            defer {
+                workspaceNotifications.removeObserver(spaceObserver)
+                isUpdatingDevices = false
+            }
             do {
                 let application = try await spotifyAccessibilityApplication()
-                try verifyForeground(foreground)
-                guard let window = spotifyAccessibilityRoots(in: application).first(where: {
-                    devicePickerButton(in: $0) != nil
-                }), let toggle = devicePickerButton(in: window) else {
+                try verifyForeground(foreground, allowingReflex: true)
+                try await dismissQuickSearchIfNeeded(in: application, preserving: foreground, allowingReflex: true)
+                // Chromium publishes its web Accessibility tree asynchronously.
+                // Re-read roots while it loads, including after Spotify relaunches.
+                guard let window = await waitForAccessibilityElement(
+                    named: "Spotify device picker", timeout: .seconds(8), find: {
+                        self.spotifyAccessibilityRoots(in: application).first {
+                            self.devicePickerButton(in: $0) != nil
+                        }
+                    }
+                ), let toggle = devicePickerButton(in: window) else {
+                    logDevicePickerDiagnostics(in: application)
                     throw BackgroundControlError.accessibilityActionFailed("Spotify's device picker is unavailable.")
                 }
+                try verifyForeground(foreground, allowingReflex: true)
                 let wasOpen = boolAttribute(kAXValueAttribute, of: toggle) == true
                 defer {
                     // Restore only the panel that this request opened. Never
@@ -206,7 +235,7 @@ final class SpotifyBackgroundController: ObservableObject {
                 ) else {
                     throw BackgroundControlError.accessibilityActionFailed("Spotify's devices did not finish loading.")
                 }
-                try verifyForeground(foreground)
+                try verifyForeground(foreground, allowingReflex: true)
                 publishDevices(picker)
                 if let requested {
                     // Re-resolve against the live picker; never retain a row's
@@ -218,7 +247,7 @@ final class SpotifyBackgroundController: ObservableObject {
                     if !target.device.isCurrent {
                         try press(button, named: "device")
                         try await Task.sleep(for: .milliseconds(350))
-                        try verifyForeground(foreground)
+                        try verifyForeground(foreground, allowingReflex: true)
                         if let field = spotifySearchField(in: window) {
                             // Spotify can complete a transfer while its hidden
                             // Accessibility snapshot still names the old device.
@@ -229,12 +258,12 @@ final class SpotifyBackgroundController: ObservableObject {
                         ) else {
                             throw BackgroundControlError.accessibilityActionFailed("Spotify did not confirm the device switch. Refresh devices to check.")
                         }
-                        try verifyForeground(foreground)
+                        try verifyForeground(foreground, allowingReflex: true)
                         publishDevices(confirmed)
-                        logger.info("Spotify device switch verified; foreground preserved")
+                        logger.info("Spotify device switch verified; foreground check passed")
                     }
                 }
-                logger.info("Spotify devices refreshed; count=\(devices.count); foregroundPID=\(foreground?.processIdentifier ?? 0)")
+                logger.info("Spotify devices refreshed; count=\(devices.count); expectedForegroundPID=\(foreground?.processIdentifier ?? 0); actualForegroundPID=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)")
             } catch {
                 currentDeviceName = nil
                 devices = []
@@ -254,7 +283,7 @@ final class SpotifyBackgroundController: ObservableObject {
     ) async throws -> SpotifyAccessibilityDevices? {
         let deadline = ContinuousClock.now.advanced(by: .seconds(12))
         repeat {
-            try verifyForeground(foreground)
+            try verifyForeground(foreground, allowingReflex: true)
             if let result = readDevices(in: window),
                result.options.contains(where: { $0.device.isCurrent && $0.device.id == deviceID }) {
                 return result
@@ -279,6 +308,87 @@ final class SpotifyBackgroundController: ObservableObject {
             return AXUIElementCopyActionNames($0, &actions) == .success
                 && (actions as? [String] ?? []).contains(kAXPressAction)
         }
+    }
+
+    private func logDevicePickerDiagnostics(in application: AXUIElement) {
+        let roots = spotifyAccessibilityRoots(in: application)
+        for (index, root) in roots.enumerated() {
+            let elements = accessibilityElements(in: root, limit: rootTraversalLimit)
+            let roles = Dictionary(grouping: elements) {
+                stringAttribute(kAXRoleAttribute, of: $0) ?? "unknown"
+            }.mapValues(\.count)
+            let roleCounts = roles.keys.sorted().map { "\($0)=\(roles[$0]!)" }.joined(separator: ",")
+            var children: CFTypeRef?
+            let childrenStatus = AXUIElementCopyAttributeValue(root, kAXChildrenAttribute as CFString, &children)
+            let connectLabels = elements.filter { linkLabel($0) == "Connect to a device" }.count
+            // Record structure rather than query text, song names, or device names.
+            logger.warning("Spotify device picker diagnostic root=\(index + 1)/\(roots.count); childrenStatus=\(childrenStatus.rawValue); elements=\(elements.count); connectLabels=\(connectLabels); roles=\(roleCounts)")
+        }
+    }
+
+    private func quickSearchOverlay(in application: AXUIElement) -> AXUIElement? {
+        let elements = spotifyAccessibilityRoots(in: application).flatMap {
+            accessibilityElements(in: $0, limit: rootTraversalLimit)
+        }
+        let mainPlayerExposed = elements.contains {
+            linkLabel($0) == "Connect to a device"
+                || (stringAttribute(kAXRoleAttribute, of: $0) == kAXButtonRole
+                    && ["Home", "Search"].contains(linkLabel($0)))
+        }
+        return elements.first { element in
+            guard stringAttribute(kAXRoleAttribute, of: element) == kAXGroupRole,
+                  linkLabel(element) == "Search" else { return false }
+            let descendants = accessibilityElements(in: element, limit: 500)
+            return SpotifyQuickSearchOverlay.matches(
+                groupLabel: linkLabel(element),
+                descendantRoles: Set(descendants.compactMap { stringAttribute(kAXRoleAttribute, of: $0) }),
+                descendantLabels: Set(descendants.map(linkLabel)),
+                mainPlayerExposed: mainPlayerExposed
+            )
+        }
+    }
+
+    private func dismissQuickSearchIfNeeded(
+        in application: AXUIElement, preserving foreground: NSRunningApplication?, allowingReflex: Bool = false
+    ) async throws {
+        guard let overlay = quickSearchOverlay(in: application) else { return }
+        let field = accessibilityElements(in: overlay, limit: 500).first {
+            stringAttribute(kAXRoleAttribute, of: $0) == kAXComboBoxRole
+        }
+        try verifyForeground(foreground, allowingReflex: allowingReflex)
+        logger.info("Spotify Quick Search overlay detected; dismissing before background control")
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(application, &pid) == .success, pid > 0,
+              let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 53, keyDown: false) else {
+            throw BackgroundControlError.accessibilityActionFailed("Could not dismiss Spotify's Quick Search.")
+        }
+        down.flags = []
+        up.flags = []
+        down.postToPid(pid)
+        up.postToPid(pid)
+        try verifyForeground(foreground, allowingReflex: allowingReflex)
+        // Hidden Chromium windows can defer keyboard processing until another
+        // AX action. Use only the field belonging to the identified overlay;
+        // a stale/removed field is harmless and must not cause a second Escape.
+        if let field, quickSearchOverlay(in: application) != nil {
+            let result = AXUIElementPerformAction(field, kAXPressAction as CFString)
+            logger.info("Spotify Quick Search post-Escape field synchronization result=\(result.rawValue)")
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        repeat {
+            try await Task.sleep(for: accessibilityPollInterval)
+            try verifyForeground(foreground, allowingReflex: allowingReflex)
+            let mainControlsReturned = spotifyAccessibilityRoots(in: application).contains {
+                devicePickerButton(in: $0) != nil
+            }
+            if quickSearchOverlay(in: application) == nil, mainControlsReturned {
+                logger.info("Spotify Quick Search dismissal verified; foreground check passed")
+                return
+            }
+        } while ContinuousClock.now < deadline
+        throw BackgroundControlError.accessibilityActionFailed("Spotify's Quick Search did not close; device controls remain hidden.")
     }
 
     private func readDevices(in window: AXUIElement) -> SpotifyAccessibilityDevices? {
@@ -335,6 +445,7 @@ final class SpotifyBackgroundController: ObservableObject {
         // Spotify's URL handler activates its window even when Launch Services
         // receives activates=false. Never use a search URL here, including as a fallback.
         try verifyForeground(foreground)
+        try await dismissQuickSearchIfNeeded(in: application, preserving: foreground)
         try pressSearchButton(in: application)
         try verifyForeground(foreground)
         guard let field = await waitForAccessibilityElement(
@@ -930,12 +1041,15 @@ final class SpotifyBackgroundController: ObservableObject {
         try? await Task.sleep(for: .seconds(3))
     }
 
-    private func verifyForeground(_ expected: NSRunningApplication?) throws {
-        guard let expected else { return }
+    private func verifyForeground(_ expected: NSRunningApplication?, allowingReflex: Bool = false) throws {
         let current = NSWorkspace.shared.frontmostApplication
-        guard current?.processIdentifier == expected.processIdentifier else {
+        guard SpotifyForegroundPolicy.accepts(
+            expected: expected?.processIdentifier,
+            current: current?.processIdentifier,
+            reflex: allowingReflex ? ProcessInfo.processInfo.processIdentifier : nil
+        ) else {
             throw BackgroundControlError.foregroundChanged(
-                expected.localizedName ?? expected.bundleIdentifier ?? "previous app",
+                expected?.localizedName ?? expected?.bundleIdentifier ?? "previous app",
                 current?.localizedName ?? current?.bundleIdentifier ?? "unknown app"
             )
         }
