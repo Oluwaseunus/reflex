@@ -3,20 +3,12 @@ import AppKit
 
 /// Permissions preferences tab
 struct PermissionsPreferencesView: View {
-    @ObservedObject var spotifyAuth = SpotifyAuthManager.shared
-
     var body: some View {
         Form {
             Section {
                 AutomationPermissionControls()
             } header: {
                 Text("Automation")
-            }
-
-            Section {
-                SpotifyAccountControls(spotifyAuth: spotifyAuth)
-            } header: {
-                Text("Spotify Account")
             }
         }
         .modifier(GroupedFormStyleModifier())
@@ -79,47 +71,6 @@ struct AutomationPermissionControls: View {
     private func openAutomationSettings() {
         guard let url = URL(string: Constants.URLs.automationPreferences) else { return }
         NSWorkspace.shared.open(url)
-    }
-}
-
-struct SpotifyAccountControls: View {
-    @ObservedObject var spotifyAuth: SpotifyAuthManager
-
-    var body: some View {
-        HStack {
-            Image(systemName: spotifyAuth.isSignedIn ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(spotifyAuth.isSignedIn ? .green : .secondary)
-
-            VStack(alignment: .leading, spacing: 2) {
-                if !spotifyAuth.isConfigured {
-                    Text("Unavailable in this build")
-                    Text("This build was compiled without Spotify API credentials.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text(spotifyAuth.isSignedIn ? "Connected" : "Not connected")
-                    Text("Sign in to search Spotify, play tracks and albums, and queue tracks.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let error = spotifyAuth.lastErrorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-            Spacer()
-
-            if spotifyAuth.isSignedIn {
-                Button("Disconnect") { spotifyAuth.signOut() }
-            } else {
-                Button("Connect Spotify") { spotifyAuth.beginSignIn() }
-                    .disabled(!spotifyAuth.isConfigured)
-            }
-        }
     }
 }
 

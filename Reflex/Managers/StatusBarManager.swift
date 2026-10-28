@@ -89,6 +89,14 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: Notification.Name("openPreferences"))
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard self?.popover?.isShown == true else { return }
+                self?.closePopover(restoreFocus: false)
+            }
+            .store(in: &cancellables)
+
     }
 
     /// Update the status bar display based on current state
@@ -142,6 +150,7 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         guard let event = NSApp.currentEvent else { return }
 
         if event.type == .rightMouseUp {
+            closePopover(restoreFocus: false)
             showMenu()
         } else {
             togglePopover()
@@ -186,12 +195,15 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
 
         // Store the currently focused app before we steal focus
         previousApp = NSWorkspace.shared.frontmostApplication
+        if previousApp?.bundleIdentifier == Bundle.main.bundleIdentifier {
+            previousApp = nil
+        }
         restoreFocusOnClose = false
 
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
-        // Activate the app and make the popover window key so gestures work immediately
-        NSApp.activate(ignoringOtherApps: true)
+        // Make the popover key without activating the app. Activating a freshly
+        // launched SwiftUI app can also open its Settings scene.
         popover?.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
 
         startEventMonitor()
@@ -203,6 +215,11 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         restoreFocusOnClose = restoreFocus
         popover?.performClose(nil)
         Logger.shared.debug("Popover closed")
+    }
+
+    func prepareForTermination() {
+        restoreFocusOnClose = false
+        previousApp = nil
     }
 
     /// Show context menu
@@ -230,9 +247,9 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Preferences
+        // Settings
         menu.addItem(NSMenuItem(
-            title: "Preferences...",
+            title: "Settings...",
             action: #selector(openPreferences),
             keyEquivalent: ","
         ))
@@ -258,7 +275,8 @@ final class StatusBarManager: NSObject, ObservableObject, NSPopoverDelegate {
         popoverIsOpen = false
         // Apply the latest state now that the popover is closed
         updateDisplay(state: stateManager?.currentState)
-        if restoreFocusOnClose, let app = previousApp, !app.isTerminated {
+        if restoreFocusOnClose, let app = previousApp, !app.isTerminated,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier {
             app.activate()
         }
         restoreFocusOnClose = false

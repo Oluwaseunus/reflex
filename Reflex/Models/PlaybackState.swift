@@ -13,7 +13,7 @@ struct PlaybackState {
     /// Current track name (if available)
     let trackName: String?
 
-    /// Current artist name (if available)
+    /// Current artist display name (if available)
     let artistName: String?
 
     /// Current album name (if available)
@@ -21,12 +21,6 @@ struct PlaybackState {
 
     /// Spotify URI for the current track, when known.
     let spotifyTrackURI: String?
-
-    /// Spotify URI for the current track's album, when known.
-    let spotifyAlbumURI: String?
-
-    /// Spotify URI for the current track's primary artist, when known.
-    let spotifyArtistURI: String?
 
     /// When this state was captured
     let timestamp: Date
@@ -37,8 +31,6 @@ struct PlaybackState {
          artistName: String?,
          albumName: String?,
          spotifyTrackURI: String? = nil,
-         spotifyAlbumURI: String? = nil,
-         spotifyArtistURI: String? = nil,
          timestamp: Date) {
         self.app = app
         self.isPlaying = isPlaying
@@ -46,14 +38,15 @@ struct PlaybackState {
         self.artistName = artistName
         self.albumName = albumName
         self.spotifyTrackURI = spotifyTrackURI
-        self.spotifyAlbumURI = spotifyAlbumURI
-        self.spotifyArtistURI = spotifyArtistURI
         self.timestamp = timestamp
     }
 
     /// Stable identity key for this track (used for dismiss/change detection)
     var trackKey: String {
-        "\(trackName ?? "")||\(artistName ?? "")"
+        if let spotifyTrackURI, !spotifyTrackURI.isEmpty {
+            return spotifyTrackURI
+        }
+        return "\(trackName ?? "")||\(artistName ?? "")"
     }
 
     /// Check if state is stale (older than threshold)
@@ -74,18 +67,6 @@ class PlaybackStateManager: ObservableObject {
 
     /// Current album artwork for the active track
     @Published var currentArtwork: NSImage?
-
-    /// Next Spotify queue items shown in the popover
-    @Published var spotifyQueueItems: [SpotifyQueueItem] = []
-
-    /// Whether a queue refresh is currently in flight
-    @Published var isSpotifyQueueLoading: Bool = false
-
-    /// Last queue loading error, suitable for a tooltip
-    @Published var spotifyQueueError: String?
-
-    /// Last time the Spotify queue was refreshed
-    @Published var spotifyQueueLastUpdate: Date?
 
     /// The currently active/targeted media app
     @Published var activeApp: MediaApp?
@@ -118,20 +99,6 @@ class PlaybackStateManager: ObservableObject {
         if state.isPlaying {
             activeApp = state.app
         }
-    }
-
-    /// Update the visible Spotify queue.
-    func updateSpotifyQueue(_ items: [SpotifyQueueItem], error: String? = nil) {
-        spotifyQueueItems = items
-        spotifyQueueError = error
-        spotifyQueueLastUpdate = Date()
-        isSpotifyQueueLoading = false
-    }
-
-    /// Mark the queue as loading.
-    func setSpotifyQueueLoading() {
-        isSpotifyQueueLoading = true
-        spotifyQueueError = nil
     }
 
     /// Clear current state

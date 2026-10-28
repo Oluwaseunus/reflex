@@ -16,11 +16,6 @@ jobs:
       APP_NAME: Reflex
       BUNDLE_ID: com.reflex.app
       LANDING_REPO: Oluwaseunus/reflex-landing-page
-      # Job-scoped so every `swift build` step sees the same client id. If
-      # scoped to just the first build, the post-accessor-patch rebuild would
-      # regenerate SpotifySecrets.swift with an empty env var and bake an
-      # empty client id into the binary.
-      SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
 
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +26,6 @@ jobs:
       - name: Build (release)
         run: |
           set -euo pipefail
-          if [ -z "${SPOTIFY_CLIENT_ID:-}" ]; then
-            echo "::error::SPOTIFY_CLIENT_ID secret is not set — release builds must include it or Spotify support will be disabled."
-            exit 1
-          fi
-          chmod +x Scripts/generate-spotify-secrets.sh
-          Scripts/generate-spotify-secrets.sh
           swift build --configuration release --arch arm64 --arch x86_64
 
       - name: Patch Bundle.module accessors and rebuild

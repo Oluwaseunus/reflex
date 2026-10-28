@@ -133,6 +133,7 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
     @MainActor
     func close(restoreFocus: Bool = true) {
         removeMonitors()
+        panel?.resignKey()
         panel?.orderOut(nil)
         // Re-activate the app that had focus before the popup opened. Mouse
         // click-away close paths opt out so the clicked target keeps focus.
@@ -140,25 +141,46 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
             prev.activate()
         }
         previousApp = nil
-        viewModel?.reset(loadRecents: false)
+        viewModel?.reset()
     }
 
     @MainActor
-    func closeAfterPlayback() {
-        close(restoreFocus: true)
+    func closeForBackgroundPlayback() -> NSRunningApplication? {
+        let foreground = previousApp ?? NSWorkspace.shared.frontmostApplication
+        // This is a nonactivating panel. Ordering it out returns keyboard focus
+        // without activating another app or hiding all of Reflex's windows.
+        close(restoreFocus: false)
+        return foreground
+    }
+
+    @MainActor
+    func waitUntilDismissed() async {
+        guard let panel else { return }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .milliseconds(500))
+
+        repeat {
+            // Give AppKit and WindowServer time to finish releasing the
+            // nonactivating panel before Spotify is asked to accept input.
+            try? await Task.sleep(for: .milliseconds(25))
+            if !panel.isVisible, !panel.isKeyWindow { return }
+        } while clock.now < deadline
+
+        Logger.shared.warning(
+            "Search panel dismissal timed out: visible=\(panel.isVisible), key=\(panel.isKeyWindow)"
+        )
+    }
+
+    @MainActor
+    func prepareForTermination() {
+        previousApp = nil
     }
 
     // MARK: - Build
 
     @MainActor
     private func buildPanel() -> SearchPanel {
-        let search = SpotifySearchProvider()
-        let playback = SpotifyPlaybackProvider()
-        let vm = SearchViewModel(
-            search: search,
-            playback: playback,
-            stateManager: stateManager
-        )
+        let vm = SearchViewModel(stateManager: stateManager)
         self.viewModel = vm
 
         // dropFirst: @Published delivers its current value on subscribe, which
@@ -166,7 +188,7 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
         // fittingSize after the window is on screen drifts a few pixels from
         // the pre-show measurement, causing a visible flicker below the search
         // bar on the very first open. We only care about *transitions* (idle →
-        // loading → results/empty/error), so skip the initial replay.
+        // commands), so skip the initial replay.
         vm.$state
             .dropFirst()
             .sink { [weak self] _ in
@@ -206,11 +228,11 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
             case 36, 76: // return, keypad enter
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                 if flags.contains(.command) {
-                    Task { @MainActor in self.viewModel?.onCommandEnterPressed() }
+                    Task { @MainActor in self.viewModel?.onEnterPressed() }
                     return true
                 }
                 if flags.contains(.shift) {
-                    Task { @MainActor in self.viewModel?.onShiftEnterPressed() }
+                    Task { @MainActor in self.viewModel?.onEnterPressed() }
                     return true
                 }
                 return false
@@ -260,12 +282,8 @@ final class SearchPopupController: NSObject, @unchecked Sendable {
                 // modified Return as a key equivalent that bypasses the field
                 // editor's insertNewline: selector, and single-line mode
                 // suppresses insertLineBreak:.
-                if flags.contains(.command) {
-                    Task { @MainActor in self.viewModel?.onCommandEnterPressed() }
-                    return nil
-                }
-                if flags.contains(.shift) {
-                    Task { @MainActor in self.viewModel?.onShiftEnterPressed() }
+                if flags.contains(.command) || flags.contains(.shift) {
+                    Task { @MainActor in self.viewModel?.onEnterPressed() }
                     return nil
                 }
             }

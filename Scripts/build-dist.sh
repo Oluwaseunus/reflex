@@ -34,10 +34,6 @@ if [ -f ".env" ]; then
     set +a
 fi
 
-if [ -z "${SPOTIFY_CLIENT_ID:-}" ]; then
-    echo "==> Warning: SPOTIFY_CLIENT_ID not set. Spotify search/playback will be unavailable."
-fi
-
 if [ -z "${SIGN_IDENTITY:-}" ]; then
     SIGN_IDENTITY="$(
         security find-identity -v -p codesigning |
@@ -66,9 +62,6 @@ fi
 
 echo "==> Using signing identity: $SIGN_IDENTITY"
 echo "==> Using Apple team id: $APPLE_TEAM_ID"
-
-echo "==> Generating SpotifySecrets.swift..."
-"$SCRIPT_DIR/generate-spotify-secrets.sh"
 
 echo "==> Building Release app with Xcode..."
 rm -rf "$DERIVED_DATA_PATH"

@@ -10,8 +10,6 @@ struct SearchField: NSViewRepresentable {
     var onMoveUp: () -> Void
     var onMoveDown: () -> Void
     var onEnter: () -> Void
-    var onCommandEnter: () -> Void
-    var onShiftEnter: () -> Void
     var onEscape: () -> Void
 
     func makeNSView(context: Context) -> NSTextField {
@@ -31,8 +29,6 @@ struct SearchField: NSViewRepresentable {
         field.onMoveUp = onMoveUp
         field.onMoveDown = onMoveDown
         field.onEnter = onEnter
-        field.onCommandEnter = onCommandEnter
-        field.onShiftEnter = onShiftEnter
         field.onEscape = onEscape
         field.cursorColor = cursorColor
         DispatchQueue.main.async {
@@ -49,8 +45,6 @@ struct SearchField: NSViewRepresentable {
             f.onMoveUp = onMoveUp
             f.onMoveDown = onMoveDown
             f.onEnter = onEnter
-            f.onCommandEnter = onCommandEnter
-            f.onShiftEnter = onShiftEnter
             f.onEscape = onEscape
             f.cursorColor = cursorColor
             // Re-apply live if the preference changes while the field is active.
@@ -84,17 +78,7 @@ struct SearchField: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)),
                  #selector(NSResponder.insertLineBreak(_:)),
                  #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-                // The field editor collapses all Return variants onto the same
-                // selector — inspect the current event's modifiers to distinguish
-                // plain Enter (play) from Cmd+Enter (queue) and Shift+Enter (play).
-                let flags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
-                if flags.contains(.command) {
-                    parent.onCommandEnter()
-                } else if flags.contains(.shift) {
-                    parent.onShiftEnter()
-                } else {
-                    parent.onEnter()
-                }
+                parent.onEnter()
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onEscape()
@@ -112,8 +96,6 @@ private final class InterceptingTextField: NSTextField {
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
     var onEnter: (() -> Void)?
-    var onCommandEnter: (() -> Void)?
-    var onShiftEnter: (() -> Void)?
     var onEscape: (() -> Void)?
     var cursorColor: NSColor = .textColor
 
@@ -134,14 +116,7 @@ private final class InterceptingTextField: NSTextField {
             onMoveDown?()
             return
         case 36, 76: // return, keypad enter
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            if flags.contains(.command) {
-                onCommandEnter?()
-            } else if flags.contains(.shift) {
-                onShiftEnter?()
-            } else {
-                onEnter?()
-            }
+            onEnter?()
             return
         case 53: // escape
             onEscape?()

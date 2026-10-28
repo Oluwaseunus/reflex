@@ -2,22 +2,12 @@ import SwiftUI
 import Combine
 
 @main
-struct ReflexApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        // No main window - this is a menu bar app
-        Settings {
-            EmptyView()
-        }
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Preferences...") {
-                    appDelegate.showPreferences()
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-        }
+enum ReflexApp {
+    static func main() {
+        let app = NSApplication.shared
+        let appDelegate = AppDelegate()
+        app.delegate = appDelegate
+        app.run()
     }
 }
 
@@ -27,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Singleton Managers
 
     private let preferencesManager = PreferencesManager.shared
+    private let settingsNavigation = SettingsNavigationModel()
     private let logger = Logger.shared
 
     // MARK: - Instance Managers
@@ -50,6 +41,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("Reflex starting...")
+
+        setupMainMenu()
 
         // Initialize managers in dependency order
         initializeManagers()
@@ -78,12 +71,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         smartRouter?.stopPolling()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        statusBarManager?.prepareForTermination()
+        SearchPopupController.shared.prepareForTermination()
+        return .terminateNow
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Keep running when windows are closed (menu bar app)
         return false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // A normal Open/Reopen request should reveal a menu-bar app's controls.
+        // The status panel itself does not activate Reflex or switch Spaces.
+        if !flag { statusBarManager?.showPopover() }
+        return false
+    }
+
     // MARK: - Initialization
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+
+        let searchItem = NSMenuItem(
+            title: "Search Spotify…",
+            action: #selector(openSpotifySearch),
+            keyEquivalent: ""
+        )
+        searchItem.target = self
+        appMenu.addItem(searchItem)
+        appMenu.addItem(.separator())
+
+        let preferencesItem = NSMenuItem(
+            title: "Settings...",
+            action: #selector(showPreferences),
+            keyEquivalent: ","
+        )
+        preferencesItem.target = self
+        appMenu.addItem(preferencesItem)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func openSpotifySearch() {
+        Task { @MainActor in
+            statusBarManager?.closePopover(restoreFocus: false)
+            SearchPopupController.shared.open()
+        }
+    }
 
     private func initializeManagers() {
         logger.debug("Initializing managers...")
@@ -138,7 +177,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environmentObject(appDetector)
 
         onboardingWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 580),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -156,34 +195,99 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func showPreferences() {
-        logger.info("Showing preferences")
+    @objc func showPreferences() {
+        logger.info("Showing settings")
 
-        // If window exists, just bring it to front
-        if let window = preferencesWindow {
-            window.makeKeyAndOrderFront(nil)
+        if let preferencesWindow {
+            updateSettingsWindow(for: settingsNavigation.selectedPane)
+            preferencesWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let contentView = PreferencesWindow()
+        let contentView = PreferencesWindow(navigation: settingsNavigation)
             .environmentObject(preferencesManager)
-            .environmentObject(appDetector)
 
-        preferencesWindow = NSWindow(
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
+        configureSettingsToolbar(for: window)
+        updateSettingsWindow(for: settingsNavigation.selectedPane, window: window)
+        window.center()
+        window.contentView = NSHostingView(rootView: contentView)
+        window.isReleasedWhenClosed = false
+        preferencesWindow = window
 
-        preferencesWindow?.title = "Reflex Preferences"
-        preferencesWindow?.center()
-        preferencesWindow?.contentView = NSHostingView(rootView: contentView)
-        preferencesWindow?.isReleasedWhenClosed = false
-
-        preferencesWindow?.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func configureSettingsToolbar(for window: NSWindow) {
+        let toolbar = NSToolbar(identifier: NSToolbar.Identifier("com.reflex.settings"))
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.displayMode = .iconAndLabel
+        toolbar.selectedItemIdentifier = settingsNavigation.selectedPane.toolbarItemIdentifier
+        window.toolbarStyle = .preference
+        window.toolbar = toolbar
+    }
+
+    private func updateSettingsWindow(for pane: SettingsPane, window: NSWindow? = nil) {
+        let window = window ?? preferencesWindow
+        window?.title = pane.rawValue
+        window?.toolbar?.selectedItemIdentifier = pane.toolbarItemIdentifier
+    }
+
+    @objc private func selectSettingsPane(_ sender: NSToolbarItem) {
+        guard let pane = SettingsPane(toolbarItemIdentifier: sender.itemIdentifier) else { return }
+        settingsNavigation.selectedPane = pane
+        updateSettingsWindow(for: pane)
+    }
+}
+
+private extension SettingsPane {
+    var toolbarItemIdentifier: NSToolbarItem.Identifier {
+        NSToolbarItem.Identifier("com.reflex.settings.\(rawValue.lowercased())")
+    }
+
+    init?(toolbarItemIdentifier: NSToolbarItem.Identifier) {
+        guard let pane = Self.allCases.first(where: { $0.toolbarItemIdentifier == toolbarItemIdentifier }) else {
+            return nil
+        }
+        self = pane
+    }
+}
+
+extension AppDelegate: NSToolbarDelegate {
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.toolbarItemIdentifier)
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard let pane = SettingsPane(toolbarItemIdentifier: itemIdentifier) else { return nil }
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = pane.rawValue
+        item.paletteLabel = pane.rawValue
+        item.image = NSImage(systemSymbolName: pane.icon, accessibilityDescription: pane.rawValue)
+        item.target = self
+        item.action = #selector(selectSettingsPane(_:))
+        return item
     }
 }
 

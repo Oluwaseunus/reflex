@@ -30,8 +30,8 @@ struct AboutPreferencesView: View {
             // Features
             VStack(alignment: .leading, spacing: 8) {
                 FeatureRow(icon: "play.circle", text: "Control Spotify playback")
-                FeatureRow(icon: "sparkle.magnifyingglass", text: "Search tracks, albums, and artists")
-                FeatureRow(icon: "music.note.list", text: "View and manage your Spotify queue")
+                FeatureRow(icon: "sparkle.magnifyingglass", text: "Search and play a song with a shortcut")
+                FeatureRow(icon: "timer", text: "Set a sleep timer")
             }
             .padding()
             .background(Color.secondary.opacity(0.05))
