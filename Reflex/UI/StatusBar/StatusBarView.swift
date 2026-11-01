@@ -167,10 +167,6 @@ struct NowPlayingCard: View {
                 // Album artwork
                 Button(action: openTrackLink) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(nsColor: .controlBackgroundColor))
-                            .frame(width: 120, height: 120)
-
                         if let artwork = stateManager.currentArtwork {
                             Image(nsImage: artwork)
                                 .resizable()
@@ -178,6 +174,10 @@ struct NowPlayingCard: View {
                                 .frame(width: 120, height: 120)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         } else {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                                .frame(width: 120, height: 120)
+
                             Image(systemName: "music.note")
                                 .font(.system(size: 32))
                                 .foregroundColor(.secondary)
@@ -187,7 +187,7 @@ struct NowPlayingCard: View {
                 .buttonStyle(.plain)
                 .disabled(!canOpenTrack)
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-                .popoverFocusHighlight(cornerRadius: 8)
+                .focusEffectDisabled()
 
                 // Right side: Track info, controls, and progress
                 VStack(alignment: .leading, spacing: 0) {
