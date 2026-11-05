@@ -14,6 +14,7 @@ struct StatusBarView: View {
         VStack(spacing: 0) {
             if let state = stateManager.currentState {
                 NowPlayingCard(state: state, router: router, stateManager: stateManager)
+                    .id(state.app?.bundleIdentifier)
                 if state.app?.bundleIdentifier == "com.spotify.client" {
                     SpotifyDeviceMenu()
                 }
@@ -63,7 +64,7 @@ struct StatusBarView: View {
             .foregroundColor(.primary)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .popoverFocusHighlight()
+            .focusEffectDisabled()
 
             Divider()
 
@@ -83,7 +84,7 @@ struct StatusBarView: View {
             .foregroundColor(.secondary)
             .padding(.horizontal)
             .padding(.vertical, 8)
-            .popoverFocusHighlight()
+            .focusEffectDisabled()
         }
         .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow))
     }
@@ -165,7 +166,7 @@ struct NowPlayingCard: View {
             // Main content: Album art and controls
             HStack(spacing: 12) {
                 // Album artwork
-                Button(action: openTrackLink) {
+                NowPlayingLink(isEnabled: canOpenTrack, action: openTrackLink) {
                     ZStack {
                         if let artwork = stateManager.currentArtwork {
                             Image(nsImage: artwork)
@@ -185,14 +186,13 @@ struct NowPlayingCard: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(!canOpenTrack)
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
                 .focusEffectDisabled()
 
                 // Right side: Track info, controls, and progress
                 VStack(alignment: .leading, spacing: 0) {
                     // Track name with hover marquee
-                    Button(action: openTrackLink) {
+                    NowPlayingLink(isEnabled: canOpenTrack, action: openTrackLink) {
                         HoverMarquee(text: state.trackName ?? "Unknown Track")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.primary)
@@ -201,10 +201,9 @@ struct NowPlayingCard: View {
                             .accessibilityLabel(state.trackName ?? "Unknown Track")
                     }
                     .buttonStyle(.plain)
-                    .disabled(!canOpenTrack)
                     .popoverFocusHighlight()
 
-                    Button(action: openAlbumLink) {
+                    NowPlayingLink(isEnabled: canOpenAlbum, action: openAlbumLink) {
                         Text(state.albumName ?? "Unknown Album")
                             .font(.system(size: 11))
                             .lineLimit(1)
@@ -215,11 +214,10 @@ struct NowPlayingCard: View {
                             .accessibilityLabel(state.albumName ?? "Unknown Album")
                     }
                     .buttonStyle(.plain)
-                    .disabled(!canOpenAlbum)
                     .padding(.top, 2)
                     .popoverFocusHighlight()
 
-                    Button(action: openArtistLink) {
+                    NowPlayingLink(isEnabled: canOpenArtist, action: openArtistLink) {
                         HoverMarquee(text: state.artistName ?? "Unknown Artist")
                             .font(.system(size: 11))
                             .foregroundColor(!usesArtworkBackground ? .secondary : .white.opacity(0.85))
@@ -228,7 +226,6 @@ struct NowPlayingCard: View {
                             .accessibilityLabel(state.artistName ?? "Unknown Artist")
                     }
                     .buttonStyle(.plain)
-                    .disabled(!canOpenArtist)
                     .padding(.top, 2)
                     .popoverFocusHighlight()
 
@@ -244,7 +241,7 @@ struct NowPlayingCard: View {
                                 .foregroundColor(.primary)
                         }
                         .buttonStyle(.plain)
-                        .popoverFocusHighlight()
+                    .popoverFocusHighlight()
 
                     Spacer(minLength: 16)
 
@@ -255,7 +252,7 @@ struct NowPlayingCard: View {
                             .frame(width: 28, height: 28)
                         }
                         .buttonStyle(.plain)
-                        .popoverFocusHighlight()
+                    .popoverFocusHighlight()
 
                         Spacer(minLength: 16)
 
@@ -265,7 +262,7 @@ struct NowPlayingCard: View {
                                 .foregroundColor(.primary)
                         }
                         .buttonStyle(.plain)
-                        .popoverFocusHighlight()
+                    .popoverFocusHighlight()
 
                         Spacer(minLength: 4)
                     }
@@ -374,7 +371,7 @@ struct NowPlayingCard: View {
                             break
                         }
                     }
-                    .popoverFocusAppearance(focusedScrubber == .playbackPosition, cornerRadius: 4)
+                    .focusEffectDisabled()
                 }
                 .frame(height: 120)
                 .environment(\.colorScheme, !usesArtworkBackground ? colorScheme : .dark)
@@ -443,36 +440,27 @@ struct NowPlayingCard: View {
     }
 
     private var canOpenAlbum: Bool {
-        state.albumName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+        PlaybackNavigation.route(to: .album, state: state) != nil
     }
 
     private var canOpenTrack: Bool {
-        state.trackName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+        PlaybackNavigation.route(to: .track, state: state) != nil
     }
 
     private var canOpenArtist: Bool {
-        state.artistName != nil && state.app?.bundleIdentifier == "com.spotify.client"
+        PlaybackNavigation.route(to: .artist, state: state) != nil
     }
 
     private func openTrackLink() {
-        guard canOpenTrack, let app = state.app else { return }
-        // Spotify is already on the current track — just bring it to the front.
-        // (Opening a spotify:track: URI would auto-play, which we don't want.)
-        AppleScriptHelper.activateApp(app)
+        PlaybackNavigation.open(.track, state: state)
     }
 
     private func openAlbumLink() {
-        guard canOpenAlbum else { return }
-        guard let album = state.albumName else { return }
-        let uri = AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
-        AppleScriptHelper.openSpotifyURI(uri)
+        PlaybackNavigation.open(.album, state: state)
     }
 
     private func openArtistLink() {
-        guard canOpenArtist else { return }
-        guard let artist = state.artistName else { return }
-        let uri = AppleScriptHelper.spotifyArtistSearchURI(artist: artist)
-        AppleScriptHelper.openSpotifyURI(uri)
+        PlaybackNavigation.open(.artist, state: state)
     }
 
     private func progressWidth(for position: Double, totalWidth: CGFloat) -> CGFloat {
@@ -539,7 +527,7 @@ struct NowPlayingCard: View {
 
         if goToPrevious {
             if wasPaused {
-                router.skipToPreviousSpotifyTrackAndPlay()
+                router.skipToPreviousTrackAndPlay()
             } else {
                 router.routeCommand(.previousTrack)
             }
@@ -548,14 +536,14 @@ struct NowPlayingCard: View {
             // track is changing and duration is about to change too.
         } else {
             currentPosition = 0
-            router.replayCurrentSpotifyTrack(resumePlayback: wasPaused)
+            router.replayCurrentTrack(resumePlayback: wasPaused)
         }
     }
 
     private func toggleMute() {
-        if let muted = router.toggleSpotifyMute() {
+        if let muted = router.toggleMute() {
             isMuted = muted
-            if !muted, let volume = AppleScriptHelper.getVolume(for: state.app!) {
+            if !muted, let app = state.app, let volume = AppleScriptHelper.getVolume(for: app) {
                 currentVolume = volume
             }
         }
@@ -579,10 +567,11 @@ struct NowPlayingCard: View {
     }
 
     private var showVolumeScrubber: Bool {
-        isSpotify && (isHoveringVolume || isScrubbingVolume)
+        supportsVolume && (isHoveringVolume || isScrubbingVolume)
     }
 
     private func sendVolumeThrottled(_ target: Int) {
+        guard supportsVolume else { return }
         guard target != lastVolumeSent else { return }
         let now = Date()
         guard now.timeIntervalSince(lastVolumeSendAt) >= scrubThrottle else { return }
@@ -590,7 +579,7 @@ struct NowPlayingCard: View {
         lastVolumeSendAt = now
         currentVolume = target
         isMuted = target == 0
-        SpotifyBridge.setVolume(target)
+        writeVolume(target)
     }
 
     private func sendPositionThrottled(_ seconds: Double) {
@@ -599,6 +588,19 @@ struct NowPlayingCard: View {
         lastPositionSendAt = now
         currentPosition = seconds
         SpotifyBridge.setPlaybackPosition(seconds)
+    }
+
+    private var supportsVolume: Bool {
+        state.app.flatMap { PlaybackPlayer(rawValue: $0.bundleIdentifier) } != nil
+    }
+
+    private func writeVolume(_ target: Int) {
+        guard supportsVolume else { return }
+        if isSpotify {
+            SpotifyBridge.setVolume(target)
+        } else {
+            MusicBridge.setVolume(target)
+        }
     }
 
     private var isSpotify: Bool {
@@ -627,13 +629,13 @@ struct NowPlayingCard: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(!usesArtworkBackground ? .secondary : .white.opacity(0.85))
-            .help(isMuted ? "Unmute Spotify" : "Mute Spotify")
+            .help("\(isMuted ? "Unmute" : "Mute") \(state.app?.name ?? "player")")
             .focusEffectDisabled()
         }
         // Reserve the slider's space so neither the icon nor app label reflows.
-        .frame(width: isSpotify ? 124 : 14, height: 14)
+        .frame(width: supportsVolume ? 124 : 14, height: 14)
         .overlay(alignment: .leading) {
-            if isSpotify {
+            if supportsVolume {
                 volumeScrubber
                     .frame(width: 100)
                     .scaleEffect(x: reduceMotion || showVolumeScrubber ? 1 : 0.03,
@@ -652,7 +654,7 @@ struct NowPlayingCard: View {
         }
         .contentShape(Rectangle())
         .onContinuousHover { phase in
-            guard isSpotify else { return }
+            guard supportsVolume else { return }
             switch phase {
             case .active(let location):
                 // A hidden slider is not a hover trigger. Once the icon opens
@@ -701,7 +703,7 @@ struct NowPlayingCard: View {
         }
         .frame(height: 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Spotify volume")
+        .accessibilityLabel("\(state.app?.name ?? "Player") volume")
         .accessibilityValue("\(currentVolume) percent")
         .accessibilityAdjustableAction { direction in
             switch direction {
@@ -725,7 +727,7 @@ struct NowPlayingCard: View {
                 break
             }
         }
-        .popoverFocusAppearance(focusedScrubber == .volume, cornerRadius: 4)
+        .focusEffectDisabled()
     }
 
     private func adjustVolume(by offset: Int) {
@@ -737,7 +739,7 @@ struct NowPlayingCard: View {
         currentVolume = target
         isMuted = target == 0
         guard target != lastVolumeSent else { return }
-        SpotifyBridge.setVolume(target)
+        writeVolume(target)
         lastVolumeSent = target
         lastVolumeSendAt = Date()
     }
@@ -746,7 +748,7 @@ struct NowPlayingCard: View {
         guard let app = state.app else { return }
 
         // Track change detection
-        let trackId = "\(state.trackName ?? "")||\(state.artistName ?? "")"
+        let trackId = state.trackKey
         let trackChanged = trackId != lastTrackId
         if trackChanged {
             lastTrackId = trackId
@@ -965,3 +967,20 @@ struct StatusBarView_Previews: PreviewProvider {
     }
 }
 #endif
+
+/// Unsupported navigation is ordinary content, so macOS does not dim the artwork
+/// or metadata as if the music itself were unavailable.
+private struct NowPlayingLink<Label: View>: View {
+    let isEnabled: Bool
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        if isEnabled {
+            Button(action: action, label: label)
+                .buttonStyle(.plain)
+        } else {
+            label()
+        }
+    }
+}

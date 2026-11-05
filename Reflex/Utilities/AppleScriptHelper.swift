@@ -102,7 +102,7 @@ final class AppleScriptHelper {
         case "com.spotify.client":
             script = """
             tell application "Spotify"
-                if it is running and player state is playing then
+                if it is running then
                     set trackName to name of current track
                     set artistName to artist of current track
                     set albumName to album of current track
@@ -114,7 +114,7 @@ final class AppleScriptHelper {
         case "com.apple.Music":
             script = """
             tell application "Music"
-                if it is running and player state is playing then
+                if it is running then
                     set trackName to name of current track
                     set artistName to artist of current track
                     set albumName to album of current track
@@ -239,17 +239,21 @@ final class AppleScriptHelper {
 
     /// Send a harmless Spotify Apple Event so macOS can prompt for Automation access.
     static func requestSpotifyAutomationPermission() -> ExecutionResult {
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty else {
+        requestAutomationPermission(for: .spotify)
+    }
+
+    static func requestAutomationPermission(for player: PlaybackPlayer) -> ExecutionResult {
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: player.rawValue).isEmpty else {
             let error = NSError(
                 domain: "AppleScriptError",
                 code: -600,
-                userInfo: [NSLocalizedDescriptionKey: "Open Spotify, then request Automation access again."]
+                userInfo: [NSLocalizedDescriptionKey: "Open \(player.name), then request Automation access again."]
             )
             return ExecutionResult(success: false, output: nil, error: error)
         }
 
         let script = """
-        tell application "Spotify"
+        tell application "\(player.appleScriptName)"
             return player state as string
         end tell
         """
@@ -364,13 +368,12 @@ final class AppleScriptHelper {
 
     /// Seek the current Spotify track to 0 and start playback, in a single
     /// AppleScript `tell` block so the two statements share one AppleEvent
-    /// round-trip and cannot race against a playback-context change. Only
-    /// supports Spotify — Music uses a different idiom.
+    /// round-trip and cannot race against a playback-context change. Supports both Spotify and Music.
     @discardableResult
-    static func restartAndPlaySpotify(for app: MediaApp) -> Bool {
-        guard app.bundleIdentifier == "com.spotify.client" else { return false }
+    static func restartAndPlay(for app: MediaApp) -> Bool {
+        guard PlaybackPlayer(rawValue: app.bundleIdentifier) != nil else { return false }
         let script = """
-        tell application "Spotify"
+        tell application "\(app.appleScriptName)"
             if it is running then
                 set player position to 0
                 play
@@ -383,12 +386,12 @@ final class AppleScriptHelper {
     /// Skip to the previous Spotify track and start playback, in a single
     /// AppleScript `tell` block. Used for the popover ⏮ button's
     /// paused + position<3s branch, where we want Spotify's native
-    /// paused-click-plays-previous-track behavior. Only supports Spotify.
+    /// paused-click-plays-previous-track behavior. Supports both Spotify and Music.
     @discardableResult
-    static func previousTrackAndPlaySpotify(for app: MediaApp) -> Bool {
-        guard app.bundleIdentifier == "com.spotify.client" else { return false }
+    static func previousTrackAndPlay(for app: MediaApp) -> Bool {
+        guard PlaybackPlayer(rawValue: app.bundleIdentifier) != nil else { return false }
         let script = """
-        tell application "Spotify"
+        tell application "\(app.appleScriptName)"
             if it is running then
                 previous track
                 play
@@ -434,9 +437,9 @@ final class AppleScriptHelper {
     static func getVolume(for app: MediaApp) -> Int? {
         let script: String
         switch app.bundleIdentifier {
-        case "com.spotify.client":
+        case "com.spotify.client", "com.apple.Music":
             script = """
-            tell application "Spotify"
+            tell application "\(app.appleScriptName)"
                 if it is running then
                     return sound volume
                 end if
@@ -458,9 +461,9 @@ final class AppleScriptHelper {
         let clamped = max(0, min(100, value))
         let script: String
         switch app.bundleIdentifier {
-        case "com.spotify.client":
+        case "com.spotify.client", "com.apple.Music":
             script = """
-            tell application "Spotify"
+            tell application "\(app.appleScriptName)"
                 if it is running then
                     set sound volume to \(clamped)
                     return sound volume
@@ -474,6 +477,60 @@ final class AppleScriptHelper {
 
         let result = execute(script)
         return result.success
+    }
+
+    static func currentAppleMusicPersistentID() -> String? {
+        execute("""
+        tell application "Music"
+            if it is running then return persistent ID of current track
+        end tell
+        """).output
+    }
+
+    /// URL tracks may expose their exact catalog link. Read it only if the
+    /// local identity still matches the playback snapshot being resolved.
+    @MainActor
+    static func currentAppleMusicCatalogSongID(expectedPersistentID: String?) -> String? {
+        guard let persistentID = expectedPersistentID,
+              AppleMusicIdentity.isValidPersistentID(persistentID) else { return nil }
+        let result = execute("""
+        tell application "Music"
+            if not running then return ""
+            if persistent ID of current track is not "\(persistentID)" then return ""
+            set streamLink to ""
+            set trackLink to ""
+            try
+                set streamLink to current stream URL
+                if streamLink is missing value then set streamLink to ""
+            end try
+            try
+                set trackLink to address of current track
+                if trackLink is missing value then set trackLink to ""
+            end try
+            return streamLink & linefeed & trackLink
+        end tell
+        """)
+        return result.output?.split(whereSeparator: \.isNewline).compactMap {
+            AppleMusicIdentity.catalogSongID(from: URL(string: String($0)))
+        }.first
+    }
+
+    static func playbackState(for app: MediaApp) -> PlaybackState? {
+        guard app.isRunning else { return nil }
+        let info = getCurrentTrack(from: app)
+        guard let track = info.track, !track.isEmpty else { return nil }
+        let identifier: String?
+        if app.bundleIdentifier == PlaybackPlayer.spotify.rawValue {
+            identifier = currentSpotifyTrackURI()
+        } else {
+            identifier = currentAppleMusicPersistentID()
+        }
+        return PlaybackState(app: app, isPlaying: checkIfAppIsPlaying(app),
+                             trackName: track, artistName: info.artist, albumName: info.album,
+                             trackIdentifier: identifier,
+                             position: getPlaybackPosition(from: app),
+                             duration: getTrackDuration(from: app), volume: getVolume(for: app),
+                             timestamp: Date())
     }
 
     // MARK: - Spotify Deep Links
@@ -595,6 +652,93 @@ final class AppleScriptHelper {
     }
 
     private static func encodeSpotifyQuery(_ query: String) -> String {
-        query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let unreserved = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        return query.addingPercentEncoding(withAllowedCharacters: unreserved) ?? query
+    }
+}
+
+/// Opens player destinations without automating menus or sending play commands.
+enum PlaybackNavigation {
+    enum Destination: CaseIterable, Hashable {
+        case track, album, artist
+    }
+
+    enum Route: Equatable {
+        case activate
+        case spotifySearch(String)
+        case appleMusic(Destination)
+    }
+
+    static func route(to destination: Destination, state: PlaybackState) -> Route? {
+        guard let app = state.app,
+              let player = PlaybackPlayer(rawValue: app.bundleIdentifier),
+              nonEmpty(state.trackName) != nil else { return nil }
+        switch destination {
+        case .track:
+            return player == .appleMusic ? .appleMusic(.track) : .activate
+        case .album:
+            guard let album = nonEmpty(state.albumName) else { return nil }
+            return player == .spotify
+                ? .spotifySearch(AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: nonEmpty(state.artistName)))
+                : .appleMusic(.album)
+        case .artist:
+            guard let artist = nonEmpty(state.artistName) else { return nil }
+            return player == .spotify
+                ? .spotifySearch(AppleScriptHelper.spotifyArtistSearchURI(artist: artist))
+                : .appleMusic(.artist)
+        }
+    }
+
+    private static func nonEmpty(_ text: String?) -> String? {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
+
+    private static var requestID = UUID()
+    private static var navigationTask: Task<Void, Never>?
+
+    @MainActor
+    static func open(_ destination: Destination, state: PlaybackState) {
+        guard let app = state.app,
+              app.bundleIdentifier == PreferencesManager.shared.playbackPlayer.rawValue,
+              let route = route(to: destination, state: state) else { return }
+        navigationTask?.cancel()
+        requestID = UUID()
+        let request = requestID
+        switch route {
+        case .activate:
+            // Spotify track URIs start playback, so track navigation only activates it.
+            AppleScriptHelper.activateApp(app)
+        case .spotifySearch(let uri):
+            let directURI = SpotifyBackgroundController.shared.nowPlayingNavigationURI(for: destination, state: state)
+            Logger.shared.info("Spotify navigation destination=\(destination) route=\(directURI ?? uri)")
+            AppleScriptHelper.openSpotifyURI(directURI ?? uri)
+        case .appleMusic(let target):
+            navigationTask = Task { @MainActor in
+                do {
+                    let details = try await AppleMusicCatalogResolver.shared.details(for: state)
+                    guard requestID == request,
+                          AppleScriptHelper.currentAppleMusicPersistentID() == state.trackIdentifier,
+                          PreferencesManager.shared.playbackPlayer == .appleMusic else { return }
+                    guard let catalogURL = details.url(for: target),
+                          let url = AppleMusicDeepLink.url(from: catalogURL, destination: target) else {
+                        throw AppleMusicCatalogError.unavailableLink
+                    }
+                    let opened = NSWorkspace.shared.open(url)
+                    Logger.shared.info("Apple Music catalog navigation destination=\(target) opened=\(opened) url=\(url.absoluteString)")
+                } catch {
+                    guard !Task.isCancelled, requestID == request,
+                          AppleScriptHelper.currentAppleMusicPersistentID() == state.trackIdentifier,
+                          PreferencesManager.shared.playbackPlayer == .appleMusic else { return }
+                    Logger.shared.error("MusicKit navigation failed", error: error)
+                    let alert = NSAlert()
+                    alert.messageText = "Couldn’t open this in Apple Music"
+                    alert.informativeText = error.localizedDescription
+                    alert.addButton(withTitle: "OK")
+                    NSApp.activate(ignoringOtherApps: true)
+                    alert.runModal()
+                }
+            }
+        }
     }
 }

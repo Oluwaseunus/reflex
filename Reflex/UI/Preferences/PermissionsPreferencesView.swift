@@ -1,10 +1,16 @@
 import SwiftUI
 import AppKit
+import MusicKit
 
 /// Permissions preferences tab
 struct PermissionsPreferencesView: View {
     var body: some View {
         Form {
+            Section {
+                MusicKitPermissionControls()
+            } header: {
+                Text("Apple Music")
+            }
             Section {
                 AutomationPermissionControls()
             } header: {
@@ -17,6 +23,7 @@ struct PermissionsPreferencesView: View {
 }
 
 struct AutomationPermissionControls: View {
+    @EnvironmentObject private var preferences: PreferencesManager
     @State private var statusMessage: String?
     @State private var statusIsError = false
 
@@ -29,8 +36,8 @@ struct AutomationPermissionControls: View {
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Allow Reflex to control Spotify")
-                    Text("Reflex uses macOS Automation to control Spotify and read the current track and context.")
+                    Text("Allow Reflex to control \(preferences.playbackPlayer.name)")
+                    Text("Reflex uses macOS Automation to control \(preferences.playbackPlayer.name) and read the current track.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -58,10 +65,13 @@ struct AutomationPermissionControls: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .onChange(of: preferences.playbackPlayer) { _, _ in
+            statusMessage = nil
+        }
     }
 
     private func requestAutomationAccess() {
-        let result = AppleScriptHelper.requestSpotifyAutomationPermission()
+        let result = AppleScriptHelper.requestAutomationPermission(for: preferences.playbackPlayer)
         statusIsError = !result.success
         statusMessage = result.success
             ? "Automation access is available, or macOS recorded your choice."
@@ -83,3 +93,57 @@ struct PermissionsPreferencesView_Previews: PreviewProvider {
     }
 }
 #endif
+
+struct MusicKitPermissionControls: View {
+    @State private var authorization = MusicAuthorization.currentStatus
+    @State private var isConnecting = false
+    @State private var message: String?
+    @State private var isError = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Connect Apple Music")
+                .font(.headline)
+            Text("Resolve the current song’s catalog links, album and artists through MusicKit.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Button(authorization == .authorized ? "Check Connection" : "Connect Apple Music") {
+                connect()
+            }
+            .disabled(isConnecting)
+            if isConnecting { ProgressView().controlSize(.small) }
+            if let message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(isError ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear { authorization = MusicAuthorization.currentStatus }
+    }
+
+    private func connect() {
+        isConnecting = true
+        message = nil
+        Task { @MainActor in
+            defer { isConnecting = false }
+            authorization = await MusicAuthorization.request()
+            guard authorization == .authorized else {
+                isError = true
+                message = AppleMusicCatalogError.denied.localizedDescription
+                return
+            }
+            do {
+                var request = MusicCatalogChartsRequest(types: [Song.self])
+                request.limit = 1
+                _ = try await request.response()
+                isError = false
+                message = "Apple Music is connected."
+                NotificationCenter.default.post(name: .musicAuthorizationChanged, object: nil)
+            } catch {
+                isError = true
+                message = "Apple Music connection failed: \(error.localizedDescription)"
+            }
+        }
+    }
+}

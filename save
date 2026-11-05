@@ -23,7 +23,7 @@
 set -e
 
 APP_NAME="Reflex"
-BUNDLE_ID="com.reflex.app"
+BUNDLE_ID="com.oluwaseun.reflex.app"
 BUILD_DIR=".build/release"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 DEST="/Applications/$APP_NAME.app"
@@ -32,12 +32,24 @@ DEST="/Applications/$APP_NAME.app"
 # keeps the code-signing identity constant across rebuilds, which lets TCC
 # Accessibility approval persist instead of resetting every build.
 # Falls back to ad-hoc if the cert is missing.
-SIGN_IDENTITY="Reflex Dev"
+# Prefer the Apple-issued identity required by MusicKit. An explicit override
+# keeps multi-team setups deterministic; otherwise preserve the local fallback.
+SIGN_IDENTITY="${REFLEX_SIGN_IDENTITY:-}"
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)".*/\1/p' | head -n 1)"
+fi
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="Reflex Dev"
+fi
 # Check for the identity via plain `find-identity -v` (not `-p codesigning -v`):
 # self-signed certs created via Keychain Access's Certificate Assistant often
 # lack the strict code-signing extended key usage extension that the policy
 # filter requires, but `codesign` itself accepts them just fine.
-if ! security find-identity -v | grep -q "$SIGN_IDENTITY"; then
+if ! security find-identity -v | grep -qF "$SIGN_IDENTITY"; then
+    if [ -n "${REFLEX_SIGN_IDENTITY:-}" ]; then
+        echo "error: requested signing identity is unavailable." >&2
+        exit 1
+    fi
     echo "==> Code-signing identity '$SIGN_IDENTITY' not found in keychain; falling back to ad-hoc."
     echo "    (Accessibility approval will reset on every build until you create the cert.)"
     SIGN_IDENTITY="-"
@@ -84,7 +96,11 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 
 # Copy resources
 if [ -d "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" ]; then
-    cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle/"* "$APP_BUNDLE/Contents/Resources/"
+    RESOURCE_DIR="$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle"
+    if [ -d "$RESOURCE_DIR/Contents/Resources" ]; then
+        RESOURCE_DIR="$RESOURCE_DIR/Contents/Resources"
+    fi
+    cp -R "$RESOURCE_DIR/"* "$APP_BUNDLE/Contents/Resources/"
 fi
 
 # Copy SwiftPM-generated resource bundles from third-party packages
@@ -115,7 +131,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundleExecutable</key>
     <string>Reflex</string>
     <key>CFBundleIdentifier</key>
-    <string>com.reflex.app</string>
+    <string>com.oluwaseun.reflex.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -134,6 +150,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <string>public.app-category.utilities</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Reflex needs to send AppleScript commands to control media playback in your music apps.</string>
+    <key>NSAppleMusicUsageDescription</key>
+    <string>Reflex uses Apple Music to find catalog links and resolve the current track’s album and artists.</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2024. All rights reserved.</string>
     <key>LSArchitecturePriority</key>
@@ -151,7 +169,7 @@ EOF
 
 # Sign without entitlements — sandbox entitlements can interfere with TCC/Accessibility.
 # Must run AFTER Info.plist is in place so the signature binds CFBundleIdentifier and the
-# resulting code-signing identifier is stable as `com.reflex.app` across rebuilds.
+# resulting code-signing identifier is stable as `com.oluwaseun.reflex.app` across rebuilds.
 codesign --force --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
 
 echo "==> Copying to Applications folder..."

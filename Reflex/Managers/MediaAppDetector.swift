@@ -50,7 +50,7 @@ final class MediaAppDetector: ObservableObject {
                      bundleIdentifier: "com.spotify.client", icon: "music.note",
                      appleScriptName: "Spotify", supportsNowPlaying: true),
             MediaApp(id: "com.apple.Music", name: "Apple Music",
-                     bundleIdentifier: "com.apple.Music", icon: "music.note.list",
+                     bundleIdentifier: "com.apple.Music", icon: "music.note",
                      appleScriptName: "Music", supportsNowPlaying: true),
             MediaApp(id: "org.videolan.vlc", name: "VLC",
                      bundleIdentifier: "org.videolan.vlc", icon: "play.rectangle",

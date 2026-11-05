@@ -59,9 +59,21 @@ final class SearchViewModel: ObservableObject {
 
     private var toastTask: Task<Void, Never>?
     private var sleepTimerTask: Task<Void, Never>?
+    private var playerObserver: AnyCancellable?
 
     init(stateManager: PlaybackStateManager? = nil) {
         self.stateManager = stateManager
+        playerObserver = PreferencesManager.shared.playbackPlayerChanges
+            .prepend(PreferencesManager.shared.playbackPlayer)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.sleepTimerTask?.cancel()
+                self?.sleepTimerTask = nil
+                if let self, self.isCommandQuery(self.query) {
+                    self.updateCommandResults(for: self.query)
+                }
+            }
     }
 
     func reset() {
@@ -119,9 +131,14 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
+        guard PreferencesManager.shared.playbackPlayer == .spotify else {
+            showToast("Apple Music search is not available yet")
+            return
+        }
         let foreground = SearchPopupController.shared.closeForBackgroundPlayback()
         Task { @MainActor in
             await SearchPopupController.shared.waitUntilDismissed()
+            guard PreferencesManager.shared.playbackPlayer == .spotify else { return }
             SpotifyBackgroundController.shared.play(query: trimmedQuery, preserving: foreground)
         }
     }
@@ -165,7 +182,7 @@ final class SearchViewModel: ObservableObject {
         let artistName = nonEmpty(playbackState?.artistName)
         let albumName = nonEmpty(playbackState?.albumName)
         let hasSpotifyTrack = isSpotify && trackName != nil
-        let unavailable = "No Spotify track is available"
+        let unavailable = "No track is available"
 
         return [
             SearchCommandItem(
@@ -173,21 +190,21 @@ final class SearchViewModel: ObservableObject {
                 title: "Go to album",
                 subtitle: albumName ?? "No album is available",
                 systemImage: "square.stack",
-                isEnabled: isSpotify && albumName != nil && hasSpotifyTrack
+                isEnabled: playbackState.flatMap { PlaybackNavigation.route(to: .album, state: $0) } != nil
             ),
             SearchCommandItem(
                 kind: .goToArtist,
                 title: "Go to artist",
                 subtitle: artistName ?? "No artist is available",
                 systemImage: "person.crop.circle",
-                isEnabled: isSpotify && artistName != nil && hasSpotifyTrack
+                isEnabled: playbackState.flatMap { PlaybackNavigation.route(to: .artist, state: $0) } != nil
             ),
             SearchCommandItem(
                 kind: .goToTrack,
                 title: "Go to track",
                 subtitle: trackSubtitle(trackName: trackName, artistName: artistName) ?? unavailable,
                 systemImage: "music.note",
-                isEnabled: hasSpotifyTrack
+                isEnabled: playbackState.flatMap { PlaybackNavigation.route(to: .track, state: $0) } != nil
             ),
             SearchCommandItem(
                 kind: .restartCurrentTrack,
@@ -323,28 +340,20 @@ final class SearchViewModel: ObservableObject {
             setSleepTimerAtEndOfTrack(command: kind)
 
         case .goToTrack:
-            guard let state = stateManager?.currentState, isSpotify(state), state.trackName != nil else { return }
-            guard let uri = state.spotifyTrackURI ?? AppleScriptHelper.currentSpotifyTrackURI() else { return }
-            recordCommandUse(kind)
-            AppleScriptHelper.openSpotifyURI(uri)
-            SearchPopupController.shared.close(restoreFocus: false)
-
+            navigate(to: .track, command: kind)
         case .goToAlbum:
-            guard let state = stateManager?.currentState,
-                  isSpotify(state), let album = nonEmpty(state.albumName) else { return }
-            recordCommandUse(kind)
-            AppleScriptHelper.openSpotifyURI(
-                AppleScriptHelper.spotifyAlbumSearchURI(album: album, artist: state.artistName)
-            )
-            SearchPopupController.shared.close(restoreFocus: false)
-
+            navigate(to: .album, command: kind)
         case .goToArtist:
-            guard let state = stateManager?.currentState,
-                  isSpotify(state), let artist = nonEmpty(state.artistName) else { return }
-            recordCommandUse(kind)
-            AppleScriptHelper.openSpotifyURI(AppleScriptHelper.spotifyArtistSearchURI(artist: artist))
-            SearchPopupController.shared.close(restoreFocus: false)
+            navigate(to: .artist, command: kind)
         }
+    }
+
+    private func navigate(to destination: PlaybackNavigation.Destination, command: SearchCommandKind) {
+        guard let state = stateManager?.currentState,
+              PlaybackNavigation.route(to: destination, state: state) != nil else { return }
+        recordCommandUse(command)
+        SearchPopupController.shared.close(restoreFocus: false)
+        PlaybackNavigation.open(destination, state: state)
     }
 
     private func setSleepTimer(after seconds: TimeInterval, label: String, command: SearchCommandKind) {

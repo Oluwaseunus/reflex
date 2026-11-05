@@ -1,349 +1,294 @@
 import Foundation
 import Combine
 import AppKit
+import MusicKit
 
-/// Intelligent router that determines which app to send media commands to
+/// Routes commands and publishes playback from the user's selected player.
 final class SmartRouter: ObservableObject {
-    /// Currently active/targeted media app
     @Published private(set) var activeApp: MediaApp?
-
-    /// Whether auto-switching is detecting a playing app
-    @Published private(set) var isPolling: Bool = false
+    @Published private(set) var isPolling = false
 
     private let appDetector: MediaAppDetector
     private let commandSender: MediaCommandSender
     private let preferences: PreferencesManager
     private let stateManager: PlaybackStateManager
-    private let spotifyBundleId = "com.spotify.client"
-
-    /// Last known non-zero Spotify volume (session memory)
-    @Published var lastSpotifyVolume: Int = 50
-
+    private let appLookup: (String) -> MediaApp?
+    private let playbackReader: (MediaApp) -> PlaybackState?
+    private let commandHandler: (MediaCommand, MediaApp) -> Bool
+    private let artworkReader: (MediaApp) async -> Data?
+    private var lastVolumes: [String: Int] = [:]
     private var pollingTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    private var artworkRequestID = UUID()
+    private var catalogRequestID = UUID()
+    private var catalogTask: Task<Void, Never>?
+    private var catalogAttemptedKey: String?
+    private var automaticResolver = AutomaticPlayerResolver()
+    private var playbackObservers: [NSObjectProtocol] = []
+    private var isRefreshingPlayback = false
+    private var refreshPending = false
 
     init(appDetector: MediaAppDetector,
          commandSender: MediaCommandSender,
          preferences: PreferencesManager,
-         stateManager: PlaybackStateManager) {
+         stateManager: PlaybackStateManager,
+         appLookup: ((String) -> MediaApp?)? = nil,
+         playbackReader: @escaping (MediaApp) -> PlaybackState? = AppleScriptHelper.playbackState,
+         commandHandler: ((MediaCommand, MediaApp) -> Bool)? = nil,
+         artworkReader: @escaping (MediaApp) async -> Data? = AppleScriptHelper.getArtworkData) {
         self.appDetector = appDetector
         self.commandSender = commandSender
         self.preferences = preferences
         self.stateManager = stateManager
-
+        self.appLookup = appLookup ?? { appDetector.app(withBundleId: $0) }
+        self.playbackReader = playbackReader
+        self.commandHandler = commandHandler ?? { commandSender.sendCommand($0, to: $1) }
+        self.artworkReader = artworkReader
         setupObservers()
-
-        // Start polling if auto-switch is enabled
-        if preferences.prefs.autoSwitchEnabled {
-            startPolling()
-        }
     }
 
     private func setupObservers() {
-        // React to preference changes
-        preferences.$prefs
-            .map { $0.autoSwitchEnabled }
+        preferences.committedPreferences
+            .prepend(preferences.prefs)
+            .map { $0.selectedPlayer }
             .removeDuplicates()
-            .sink { [weak self] enabled in
-                if enabled {
-                    self?.startPolling()
-                } else {
-                    self?.stopPolling()
-                }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.artworkRequestID = UUID()
+                self.cancelCatalogResolution()
+                self.stateManager.clearState()
+                self.activeApp = nil
+                self.pollPlaybackState()
             }
             .store(in: &cancellables)
+
+        preferences.committedPreferences
+            .prepend(preferences.prefs)
+            .map { $0.pollingInterval }
+            .removeDuplicates()
+            .sink { [weak self] interval in
+                self?.startPolling(interval: interval)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .musicAuthorizationChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.cancelCatalogResolution()
+                self?.pollPlaybackState()
+            }
+            .store(in: &cancellables)
+
+        appDetector.$runningApps
+            .dropFirst()
+            .sink { [weak self] _ in
+                // App detector publishes before its app definitions finish updating.
+                DispatchQueue.main.async { self?.pollPlaybackState() }
+            }
+            .store(in: &cancellables)
+
+        // Playback notifications reduce the polling delay, while the timer
+        // remains the fallback if a player doesn't send a notification.
+        for name in ["com.spotify.client.PlaybackStateChanged", "com.apple.Music.playerInfo"] {
+            playbackObservers.append(DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name(name), object: nil, queue: .main
+            ) { [weak self] _ in
+                guard self?.preferences.prefs.selectedPlayer == .automatic else { return }
+                self?.pollPlaybackState()
+            })
+        }
     }
 
-    /// Route a media command to the appropriate app
-    /// - parameter requirePlaying: when true, only apps that are actively playing are eligible
+    private func determineTargetApp(requirePlaying: Bool = false) -> MediaApp? {
+        if preferences.prefs.selectedPlayer == .automatic {
+            guard !isRefreshingPlayback else { return nil }
+            pollPlaybackState()
+        }
+        guard let app = appLookup(preferences.playbackPlayer.rawValue),
+              app.isInstalled, app.isRunning else { return nil }
+        guard !requirePlaying || AppleScriptHelper.checkIfAppIsPlaying(app) else { return nil }
+        return app
+    }
+
     @discardableResult
     func routeCommand(_ command: MediaCommand, requirePlaying: Bool = false) -> Bool {
-        guard let targetApp = determineTargetApp(requirePlaying: requirePlaying) else {
-            Logger.shared.routing("No target app available for command")
-            return false
-        }
-
-        Logger.shared.routing("Routing \(command.displayName) to \(targetApp.name)")
-
-        let success = commandSender.sendCommand(command, to: targetApp)
-
-        if success {
-            preferences.setLastUsedApp(targetApp.id)
-            activeApp = targetApp
-
-            NotificationCenter.default.post(
-                name: Constants.Notifications.activeAppChanged,
-                object: targetApp
-            )
-        }
-
-        // We handled the key (found a target), even if sending failed
-        return true
-    }
-
-    /// Determine which app should receive the next command (Spotify-first, no quick switch)
-    private func determineTargetApp(requirePlaying: Bool) -> MediaApp? {
-        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
-              spotify.isInstalled else {
-            Logger.shared.routing("Spotify not installed; no target app available")
-            return nil
-        }
-
-        if requirePlaying {
-            guard spotify.isRunning else {
-                Logger.shared.routing("Spotify not running; no target app for command")
-                return nil
-            }
-            guard AppleScriptHelper.checkIfAppIsPlaying(spotify) else {
-                Logger.shared.routing("Spotify not playing; no target app for command")
-                return nil
-            }
-        } else {
-            guard spotify.isRunning else {
-                Logger.shared.routing("Spotify not running; no target app for command")
-                return nil
-            }
-        }
-
-        return spotify
-    }
-
-    // Quick switch removed; no multi-app tie-breakers needed
-
-    /// Restart the currently loaded Spotify track by seeking to position 0,
-    /// preserving play/pause state. Currently **not wired up** — retained for
-    /// a potential future reintroduction of the media-key "previous-while-
-    /// paused" flow (see PREV_WHILE_PAUSED_PLAN.md).
-    @available(*, deprecated, message: "Not currently in use. Popover ⏮ button uses replayCurrentSpotifyTrack(resumePlayback:) instead.")
-    @discardableResult
-    func restartCurrentSpotifyTrack() -> Bool {
-        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
-              spotify.isInstalled else {
-            Logger.shared.routing("Restart-current-track: Spotify not installed")
-            return false
-        }
-        guard spotify.isRunning else {
-            Logger.shared.routing("Restart-current-track: Spotify not running")
-            return false
-        }
-
-        Logger.shared.routing("Restart-current-track: seeking Spotify to 0")
-        let success = AppleScriptHelper.setPlaybackPosition(0, for: spotify)
-
-        if success {
-            preferences.setLastUsedApp(spotify.id)
-            activeApp = spotify
-
-            NotificationCenter.default.post(
-                name: Constants.Notifications.activeAppChanged,
-                object: spotify
-            )
-        }
-
+        guard let app = determineTargetApp(requirePlaying: requirePlaying) else { return false }
+        let success = commandHandler(command, app)
+        if success { recordTarget(app) }
         return success
     }
 
-    /// Skip to the previous Spotify track and immediately start playback,
-    /// fused into a single AppleScript `tell` block. Used by the popover
-    /// ⏮ button when the track is paused and the position is within the
-    /// restart-threshold window (see `NowPlayingCard.restartThresholdSeconds`),
-    /// so the behavior matches Spotify's own paused ⏮ click (which auto-plays
-    /// the previous track).
-    /// - Returns: `true` if the command was issued, `false` otherwise.
+    private func recordTarget(_ app: MediaApp) {
+        preferences.setLastUsedApp(app.id)
+        activeApp = app
+        NotificationCenter.default.post(name: Constants.Notifications.activeAppChanged, object: app)
+    }
+
     @discardableResult
-    func skipToPreviousSpotifyTrackAndPlay() -> Bool {
-        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
-              spotify.isInstalled else {
-            Logger.shared.routing("Skip-to-previous-and-play: Spotify not installed")
-            return false
-        }
-        guard spotify.isRunning else {
-            Logger.shared.routing("Skip-to-previous-and-play: Spotify not running")
-            return false
-        }
-
-        Logger.shared.routing("Skip-to-previous-and-play: previous track + play")
-        let success = AppleScriptHelper.previousTrackAndPlaySpotify(for: spotify)
-
-        if success {
-            preferences.setLastUsedApp(spotify.id)
-            activeApp = spotify
-
-            NotificationCenter.default.post(
-                name: Constants.Notifications.activeAppChanged,
-                object: spotify
-            )
-        }
-
+    func skipToPreviousTrackAndPlay() -> Bool {
+        guard let app = determineTargetApp() else { return false }
+        let success = AppleScriptHelper.previousTrackAndPlay(for: app)
+        if success { recordTarget(app) }
         return success
     }
 
-    /// Replay the currently loaded Spotify track.
-    /// - When `resumePlayback` is `true`, seek to 0 **and** start playback,
-    ///   fused into a single AppleScript `tell` block to avoid a race with
-    ///   any intervening playback-context change.
-    /// - When `false`, seek to 0 only, leaving Spotify's play state alone
-    ///   (used when Spotify is already playing and we just want the scrubber
-    ///   to jump back).
-    /// - Returns: `true` if the command was issued, `false` otherwise.
     @discardableResult
-    func replayCurrentSpotifyTrack(resumePlayback: Bool) -> Bool {
-        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
-              spotify.isInstalled else {
-            Logger.shared.routing("Replay-current-track: Spotify not installed")
-            return false
-        }
-        guard spotify.isRunning else {
-            Logger.shared.routing("Replay-current-track: Spotify not running")
-            return false
-        }
-
-        let success: Bool
-        if resumePlayback {
-            Logger.shared.routing("Replay-current-track: seeking Spotify to 0 and playing")
-            success = AppleScriptHelper.restartAndPlaySpotify(for: spotify)
-        } else {
-            Logger.shared.routing("Replay-current-track: seeking Spotify to 0")
-            success = AppleScriptHelper.setPlaybackPosition(0, for: spotify)
-        }
-
-        if success {
-            preferences.setLastUsedApp(spotify.id)
-            activeApp = spotify
-
-            NotificationCenter.default.post(
-                name: Constants.Notifications.activeAppChanged,
-                object: spotify
-            )
-        }
-
+    func replayCurrentTrack(resumePlayback: Bool) -> Bool {
+        guard let app = determineTargetApp() else { return false }
+        let success = resumePlayback
+            ? AppleScriptHelper.restartAndPlay(for: app)
+            : AppleScriptHelper.setPlaybackPosition(0, for: app)
+        if success { recordTarget(app) }
         return success
     }
 
-    /// Start polling for playback state
     func startPolling() {
-        guard !isPolling else { return }
+        startPolling(interval: preferences.prefs.pollingInterval)
+    }
 
-        let interval = preferences.prefs.pollingInterval
+    private func startPolling(interval: TimeInterval) {
+        pollingTimer?.invalidate()
         pollingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.pollPlaybackState()
         }
-
         isPolling = true
-        Logger.shared.info("Started playback state polling (interval: \(interval)s)")
-
-        // Do an immediate poll
-        pollPlaybackState()
     }
 
-    /// Stop polling for playback state
     func stopPolling() {
         pollingTimer?.invalidate()
         pollingTimer = nil
         isPolling = false
-        Logger.shared.info("Stopped playback state polling")
     }
 
-    /// Refresh Spotify playback state and update routing/display accordingly (Spotify-only)
-    private func refreshSpotifyPlaybackState(reason: String) {
-        if let spotify = appDetector.app(withBundleId: spotifyBundleId),
-           spotify.isRunning,
-           AppleScriptHelper.checkIfAppIsPlaying(spotify) {
-            let trackInfo: (track: String?, artist: String?, album: String?)
-            if spotify.supportsNowPlaying {
-                trackInfo = AppleScriptHelper.getCurrentTrack(from: spotify)
-            } else {
-                trackInfo = (nil, nil, nil)
-            }
+    func pollPlaybackState() {
+        guard !isRefreshingPlayback else {
+            refreshPending = true
+            return
+        }
+        isRefreshingPlayback = true
+        refreshPlaybackState(for: preferences.prefs.selectedPlayer)
+        isRefreshingPlayback = false
+        if refreshPending {
+            refreshPending = false
+            DispatchQueue.main.async { [weak self] in self?.pollPlaybackState() }
+        }
+    }
 
-            if let currentVol = AppleScriptHelper.getVolume(for: spotify), currentVol > 0 {
-                lastSpotifyVolume = currentVol
-            }
-
-            // A playing track always clears the dismissed state
-            stateManager.dismissedTrackKey = nil
-
-            // Compare against previous state *before* updating currentState.
-            let previousState = stateManager.currentState
-            let trackURI = spotify.supportsNowPlaying ? AppleScriptHelper.currentSpotifyTrackURI() : nil
-            let previousKey = previousState?.trackKey ?? "||"
-            let currentKey = trackURI ?? "\(trackInfo.track ?? "")||\(trackInfo.artist ?? "")"
-            let trackChanged = previousKey != currentKey
-
-            let state = PlaybackState(
-                app: spotify,
-                isPlaying: true,
-                trackName: trackInfo.track,
-                artistName: trackInfo.artist,
-                albumName: trackInfo.album,
-                spotifyTrackURI: trackURI,
-                timestamp: Date()
-            )
-
-            stateManager.updateState(state)
-            activeApp = spotify
-
-            Logger.shared.debug("Playback detected: \(spotify.name) - \(trackInfo.track ?? "unknown track")")
-
-            // Fetch artwork only when track changed or missing
-            if spotify.supportsNowPlaying {
-                if trackChanged || stateManager.currentArtwork == nil {
-                    Task {
-                        if let artworkData = await AppleScriptHelper.getArtworkData(from: spotify) {
-                            await MainActor.run {
-                                self.stateManager.currentArtwork = NSImage(data: artworkData)
-                            }
-                        }
-                    }
-                }
-            }
-
+    private func refreshPlaybackState(for selection: PlaybackPlayerSelection) {
+        let player: PlaybackPlayer
+        let app: MediaApp?
+        let snapshot: PlaybackState?
+        if let explicitPlayer = selection.player {
+            player = explicitPlayer
+            app = appLookup(player.rawValue)
+            snapshot = app.flatMap { $0.isRunning ? playbackReader($0) : nil }
         } else {
-            // Preserve last known track so user can resume from the menu bar,
-            // but skip if the user dismissed this track
-            if let current = stateManager.currentState {
-                if stateManager.dismissedTrackKey == current.trackKey {
-                    return
+            var apps: [PlaybackPlayer: MediaApp] = [:]
+            var states: [PlaybackPlayer: PlaybackState] = [:]
+            for candidate in PlaybackPlayer.allCases {
+                guard let candidateApp = appLookup(candidate.rawValue),
+                      candidateApp.isInstalled, candidateApp.isRunning else { continue }
+                apps[candidate] = candidateApp
+                states[candidate] = playbackReader(candidateApp)
+            }
+            guard preferences.prefs.selectedPlayer == selection else { return }
+            let playing = Set(states.filter { $0.value.isPlaying }.map(\.key))
+            let remembered = preferences.prefs.lastUsedApp.flatMap(PlaybackPlayer.init(rawValue:))
+            let foreground = NSWorkspace.shared.frontmostApplication?.bundleIdentifier.flatMap(PlaybackPlayer.init(rawValue:))
+            guard let resolved = automaticResolver.resolve(available: Set(apps.keys), playing: playing,
+                                                           remembered: remembered, foreground: foreground) else {
+                preferences.resolveAutomaticPlayer(nil)
+                artworkRequestID = UUID()
+                cancelCatalogResolution()
+                stateManager.clearState()
+                activeApp = nil
+                return
+            }
+            if preferences.playbackPlayer != resolved {
+                Logger.shared.info("Automatic player switched to \(resolved.name)")
+            }
+            preferences.resolveAutomaticPlayer(resolved)
+            player = resolved
+            app = apps[resolved]
+            snapshot = states[resolved]
+        }
+        // Apple Events may process preference changes while awaiting a reply.
+        guard preferences.prefs.selectedPlayer == selection else { return }
+        guard let app, let state = snapshot else {
+            artworkRequestID = UUID()
+            cancelCatalogResolution()
+            stateManager.clearState()
+            activeApp = nil
+            return
+        }
+        if let volume = state.volume, volume > 0 { lastVolumes[app.id] = volume }
+        if state.isPlaying { stateManager.dismissedTrackKey = nil }
+        guard stateManager.dismissedTrackKey != state.trackKey else { return }
+
+        let trackChanged = stateManager.currentState?.trackKey != state.trackKey
+        stateManager.updateState(state)
+        activeApp = app
+        if trackChanged {
+            cancelCatalogResolution()
+            stateManager.currentArtwork = nil
+            artworkRequestID = UUID()
+        }
+        if player == .appleMusic, MusicAuthorization.currentStatus == .authorized,
+           stateManager.currentCatalogDetails == nil, catalogAttemptedKey != state.trackKey {
+            let expectedKey = state.trackKey
+            catalogAttemptedKey = expectedKey
+            catalogRequestID = UUID()
+            let requestID = catalogRequestID
+            catalogTask = Task { @MainActor in
+                defer {
+                    if self.catalogRequestID == requestID { self.catalogTask = nil }
                 }
-                let pausedState = PlaybackState(
-                    app: current.app,
-                    isPlaying: false,
-                    trackName: current.trackName,
-                    artistName: current.artistName,
-                    albumName: current.albumName,
-                    spotifyTrackURI: current.spotifyTrackURI,
-                    timestamp: Date()
-                )
-                stateManager.updateState(pausedState)
+                do {
+                    let details = try await AppleMusicCatalogResolver.shared.details(for: state)
+                    guard self.catalogRequestID == requestID,
+                          self.stateManager.currentState?.trackKey == expectedKey,
+                          self.preferences.playbackPlayer == .appleMusic else { return }
+                    self.stateManager.currentCatalogDetails = details
+                    Logger.shared.info("MusicKit resolved track=\(details.track.id) albums=\(details.albums.map(\.id).joined(separator: ",")) artists=\(details.artists.map(\.id).joined(separator: ","))")
+                } catch {
+                    Logger.shared.info("MusicKit metadata unavailable: \(error.localizedDescription)")
+                }
+            }
+        }
+        guard trackChanged || stateManager.currentArtwork == nil else { return }
+        let requestID = artworkRequestID
+        Task { @MainActor in
+            let data = await artworkReader(app)
+            await MainActor.run {
+                // A slow artwork download must never paint a different track/player.
+                guard self.artworkRequestID == requestID,
+                      self.stateManager.currentState?.trackKey == state.trackKey else { return }
+                self.stateManager.currentArtwork = data.flatMap(NSImage.init(data:))
             }
         }
     }
 
-    /// Poll for current playback state and update routing/display accordingly (Spotify-only)
-    private func pollPlaybackState() {
-        refreshSpotifyPlaybackState(reason: "timer")
+    private func cancelCatalogResolution() {
+        catalogRequestID = UUID()
+        catalogTask?.cancel()
+        catalogTask = nil
+        catalogAttemptedKey = nil
+    }
+
+    /// Mute by setting volume to zero; restore each player's own last volume.
+    func toggleMute() -> Bool? {
+        guard let app = determineTargetApp() else { return nil }
+        let remembered = lastVolumes[app.id] ?? 50
+        guard let volume = AppleScriptHelper.getVolume(for: app) else { return nil }
+        if volume > 0 { lastVolumes[app.id] = volume }
+        let target = volume > 0 ? 0 : max(remembered, 10)
+        guard AppleScriptHelper.setVolume(target, for: app) else { return nil }
+        return target == 0
     }
 
     deinit {
-        stopPolling()
-    }
-
-    // MARK: - Volume Helpers (Spotify)
-
-    /// Toggle mute for Spotify; returns whether muted after the operation
-    func toggleSpotifyMute() -> Bool? {
-        guard let spotify = appDetector.app(withBundleId: spotifyBundleId),
-              spotify.isRunning else { return nil }
-
-        let currentVol = AppleScriptHelper.getVolume(for: spotify) ?? lastSpotifyVolume
-        if currentVol > 0 {
-            lastSpotifyVolume = currentVol
-        }
-
-        let target = currentVol > 0 ? 0 : max(lastSpotifyVolume, 10)
-        let success = AppleScriptHelper.setVolume(target, for: spotify)
-        guard success else { return nil }
-        if target > 0 { lastSpotifyVolume = target }
-        return target == 0
+        pollingTimer?.invalidate()
+        catalogTask?.cancel()
+        for observer in playbackObservers { DistributedNotificationCenter.default().removeObserver(observer) }
     }
 }

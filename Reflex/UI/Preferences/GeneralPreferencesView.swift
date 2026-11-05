@@ -7,6 +7,31 @@ struct GeneralPreferencesView: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("Music player", selection: $preferences.prefs.selectedPlayer) {
+                    ForEach(PlaybackPlayerSelection.allCases) { player in
+                        Text(player.name).tag(player)
+                    }
+                }
+                .pickerStyle(.menu)
+                if preferences.prefs.selectedPlayer == .automatic {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(preferences.automaticPlayerAvailable
+                             ? "Currently following \(preferences.playbackPlayer.name)"
+                             : "No supported music player is running.")
+                        Text("Follows the player that most recently starts playing and keeps it selected when paused.")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                } else {
+                    Text("Reflex shows and controls the selected player. Search and playback devices are currently available for Spotify.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Playback")
+            }
+
             // Display Section
             Section {
                 Toggle("Show now playing in menu bar",

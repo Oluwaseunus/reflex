@@ -50,7 +50,7 @@ struct SearchPopupView: View {
                     get: { viewModel.query },
                     set: { viewModel.onQueryChanged($0) }
                 ),
-                placeholder: "Search Spotify…",
+                placeholder: preferences.playbackPlayer == .spotify ? "Search Spotify…" : "Apple Music search coming soon",
                 cursorColor: cursorColor,
                 onMoveUp: { viewModel.moveSelection(by: -1) },
                 onMoveDown: { viewModel.moveSelection(by: 1) },

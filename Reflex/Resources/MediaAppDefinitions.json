@@ -11,7 +11,7 @@
     "id": "com.apple.Music",
     "name": "Apple Music",
     "bundleIdentifier": "com.apple.Music",
-    "icon": "music.note.list",
+    "icon": "music.note",
     "appleScriptName": "Music",
     "supportsNowPlaying": true
   },

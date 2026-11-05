@@ -1,5 +1,24 @@
 import Foundation
 
+enum PlaybackPlayer: String, Codable, CaseIterable, Identifiable {
+    case spotify = "com.spotify.client"
+    case appleMusic = "com.apple.Music"
+
+    var id: String { rawValue }
+    var name: String { self == .spotify ? "Spotify" : "Apple Music" }
+    var appleScriptName: String { self == .spotify ? "Spotify" : "Music" }
+}
+
+enum PlaybackPlayerSelection: String, Codable, CaseIterable, Identifiable {
+    case automatic
+    case spotify = "com.spotify.client"
+    case appleMusic = "com.apple.Music"
+
+    var id: String { rawValue }
+    var player: PlaybackPlayer? { PlaybackPlayer(rawValue: rawValue) }
+    var name: String { player?.name ?? "Automatic" }
+}
+
 /// Style of the selection highlight in the Spotify search popup.
 enum SearchHighlightStyle: String, Codable, CaseIterable {
     case accent
@@ -9,11 +28,13 @@ enum SearchHighlightStyle: String, Codable, CaseIterable {
 /// User preferences for the Reflex app
 struct AppPreferences: Codable {
     enum CodingKeys: String, CodingKey {
-        case favoriteApps, lastUsedApp, autoSwitchEnabled, showNowPlaying, showTrackInfo,
+        case selectedPlayer, favoriteApps, lastUsedApp, autoSwitchEnabled, showNowPlaying, showTrackInfo,
              showArtistInMenuBar, launchAtLogin, pollingInterval, customShortcuts,
              hasCompletedOnboarding, preferencesVersion,
              updateMenuBarWhilePopoverOpen, searchHighlightStyle, useAlbumArtworkBackground
     }
+
+    var selectedPlayer: PlaybackPlayerSelection = .spotify
 
     /// Bundle IDs of user's favorite media apps
     var favoriteApps: [String] = []
@@ -64,6 +85,7 @@ struct AppPreferences: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
+        selectedPlayer = try container.decodeIfPresent(PlaybackPlayerSelection.self, forKey: .selectedPlayer) ?? .spotify
         favoriteApps = try container.decodeIfPresent([String].self, forKey: .favoriteApps) ?? []
         lastUsedApp = try container.decodeIfPresent(String.self, forKey: .lastUsedApp)
         autoSwitchEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoSwitchEnabled) ?? true

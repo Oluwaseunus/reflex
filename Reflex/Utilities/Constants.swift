@@ -18,7 +18,7 @@ enum Constants {
 
     /// App configuration
     enum App {
-        static let bundleIdentifier = "com.reflex.app"
+        static let bundleIdentifier = "com.oluwaseun.reflex.app"
         static let name = "Reflex"
         static let version = "1.0.0"
         static let minimumMacOSVersion = "10.15"

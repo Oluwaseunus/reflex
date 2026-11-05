@@ -21,17 +21,18 @@ struct AboutPreferencesView: View {
                 .foregroundColor(.secondary)
 
             // Description
-            Text("Spotify controls from your menu bar")
+            Text("Spotify and Apple Music controls from your menu bar")
                 .font(.body)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
 
             Spacer()
 
             // Features
             VStack(alignment: .leading, spacing: 8) {
-                FeatureRow(icon: "play.circle", text: "Control Spotify playback")
-                FeatureRow(icon: "sparkle.magnifyingglass", text: "Search and play a song with a shortcut")
-                FeatureRow(icon: "timer", text: "Set a sleep timer")
+                FeatureRow(icon: "play.circle", text: "Control Spotify and Apple Music playback")
+                FeatureRow(icon: "sparkle.magnifyingglass", text: "Search and play Spotify with a shortcut")
+                FeatureRow(icon: "timer", text: "Set a Spotify sleep timer")
             }
             .padding()
             .background(Color.secondary.opacity(0.05))

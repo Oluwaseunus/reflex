@@ -28,7 +28,63 @@ final class SpotifyBackgroundController: ObservableObject {
 
     private init() {}
 
+    /// Read the actual destination links without changing Spotify's view or playback.
+    func nowPlayingNavigationURI(for destination: PlaybackNavigation.Destination,
+                                 state: PlaybackState) -> String? {
+        guard AXIsProcessTrusted() else {
+            logger.info("Spotify navigation links unavailable: Accessibility not granted")
+            return nil
+        }
+        guard destination != .track,
+              !isRunning, !isUpdatingDevices,
+              let expectedTrack = state.spotifyTrackURI,
+              AppleScriptHelper.currentSpotifyTrackURI() == expectedTrack,
+              let spotify = NSRunningApplication.runningApplications(
+                  withBundleIdentifier: spotifyBundleID
+              ).first else {
+            logger.info("Spotify navigation links unavailable: busy or playback identity changed")
+            return nil
+        }
+
+        let application = AXUIElementCreateApplication(spotify.processIdentifier)
+        AXUIElementSetMessagingTimeout(application, accessibilityMessageTimeout)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        var visited = 0
+        for root in spotifyAccessibilityRoots(in: application) {
+            var queue = [root]
+            var index = 0
+            while index < queue.count, index < rootTraversalLimit, ContinuousClock.now < deadline {
+                let element = queue[index]
+                index += 1
+                visited += 1
+                AXUIElementSetMessagingTimeout(element, accessibilityMessageTimeout)
+                if linkLabel(element) == "Now playing bar" {
+                    let links = accessibilityElements(in: element, limit: 100).compactMap { child -> SpotifyNowPlayingLink? in
+                        guard stringAttribute(kAXRoleAttribute, of: child) == "AXLink" else { return nil }
+                        for type in ["album", "artist", "track"] {
+                            if let uri = spotifyURI(of: child, type: type) {
+                                return SpotifyNowPlayingLink(label: linkLabel(child), value: uri)
+                            }
+                        }
+                        return nil
+                    }
+                    logger.info("Spotify now-playing links found count=\(links.count)")
+                    guard let uri = SpotifyNavigationLinks.uri(for: destination, state: state, links: links),
+                          AppleScriptHelper.currentSpotifyTrackURI() == expectedTrack else {
+                        logger.info("Spotify navigation links rejected: metadata or playback identity changed")
+                        return nil
+                    }
+                    return uri
+                }
+                queue.append(contentsOf: accessibilityChildren(of: element))
+            }
+        }
+        logger.info("Spotify now-playing bar unavailable visited=\(visited)")
+        return nil
+    }
+
     func play(query: String, preserving expectedForeground: NSRunningApplication?) {
+        guard PreferencesManager.shared.playbackPlayer == .spotify else { return }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isRunning else { return }
         guard AXIsProcessTrusted() else {
@@ -161,6 +217,7 @@ final class SpotifyBackgroundController: ObservableObject {
     }
 
     private func updateDevices(switchingTo requested: SpotifyDevice?) {
+        guard PreferencesManager.shared.playbackPlayer == .spotify else { return }
         guard !isUpdatingDevices else { return }
         guard !isRunning else {
             if requested != nil {
@@ -1042,6 +1099,9 @@ final class SpotifyBackgroundController: ObservableObject {
     }
 
     private func verifyForeground(_ expected: NSRunningApplication?, allowingReflex: Bool = false) throws {
+        guard PreferencesManager.shared.playbackPlayer == .spotify else {
+            throw BackgroundControlError.accessibilityActionFailed("The selected music player changed.")
+        }
         let current = NSWorkspace.shared.frontmostApplication
         guard SpotifyForegroundPolicy.accepts(
             expected: expected?.processIdentifier,

@@ -19,8 +19,15 @@ struct PlaybackState {
     /// Current album name (if available)
     let albumName: String?
 
-    /// Spotify URI for the current track, when known.
-    let spotifyTrackURI: String?
+    /// Identity supplied by the player (Spotify URI or Music persistent ID).
+    let trackIdentifier: String?
+    let position: Double?
+    let duration: Double?
+    let volume: Int?
+
+    var spotifyTrackURI: String? {
+        app?.bundleIdentifier == PlaybackPlayer.spotify.rawValue ? trackIdentifier : nil
+    }
 
     /// When this state was captured
     let timestamp: Date
@@ -31,22 +38,28 @@ struct PlaybackState {
          artistName: String?,
          albumName: String?,
          spotifyTrackURI: String? = nil,
+         trackIdentifier: String? = nil,
+         position: Double? = nil,
+         duration: Double? = nil,
+         volume: Int? = nil,
          timestamp: Date) {
         self.app = app
         self.isPlaying = isPlaying
         self.trackName = trackName
         self.artistName = artistName
         self.albumName = albumName
-        self.spotifyTrackURI = spotifyTrackURI
+        self.trackIdentifier = trackIdentifier ?? spotifyTrackURI
+        self.position = position
+        self.duration = duration
+        self.volume = volume
         self.timestamp = timestamp
     }
 
     /// Stable identity key for this track (used for dismiss/change detection)
     var trackKey: String {
-        if let spotifyTrackURI, !spotifyTrackURI.isEmpty {
-            return spotifyTrackURI
-        }
-        return "\(trackName ?? "")||\(artistName ?? "")"
+        let identity = trackIdentifier.flatMap { $0.isEmpty ? nil : $0 }
+            ?? "\(trackName ?? "")||\(artistName ?? "")||\(albumName ?? "")"
+        return "\(app?.bundleIdentifier ?? "")||\(identity)"
     }
 
     /// Check if state is stale (older than threshold)
@@ -64,6 +77,9 @@ struct PlaybackState {
 class PlaybackStateManager: ObservableObject {
     /// Current playback state (nil if nothing detected)
     @Published var currentState: PlaybackState?
+
+    /// MusicKit identities and relationships for the displayed Apple Music track.
+    @Published var currentCatalogDetails: AppleMusicCatalogDetails?
 
     /// Current album artwork for the active track
     @Published var currentArtwork: NSImage?
@@ -94,16 +110,19 @@ class PlaybackStateManager: ObservableObject {
 
     /// Update state with new playback info
     func updateState(_ state: PlaybackState) {
+        if currentState?.trackKey != state.trackKey { currentCatalogDetails = nil }
         currentState = state
         lastUpdate = Date()
-        if state.isPlaying {
-            activeApp = state.app
-        }
+        activeApp = state.app
     }
 
     /// Clear current state
     func clearState() {
         currentState = nil
+        currentCatalogDetails = nil
+        currentArtwork = nil
+        activeApp = nil
+        dismissedTrackKey = nil
         lastUpdate = Date()
     }
 
@@ -115,6 +134,7 @@ class PlaybackStateManager: ObservableObject {
         guard let state = currentState else { return }
         dismissedTrackKey = state.trackKey
         currentState = nil
+        currentCatalogDetails = nil
         currentArtwork = nil
         lastUpdate = Date()
     }
